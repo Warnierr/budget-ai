@@ -1,0 +1,25 @@
+# Base de données (Supabase ou PostgreSQL local)
+DATABASE_URL="postgresql://user:password@localhost:5432/budgetai"
+
+# NextAuth.js
+NEXTAUTH_URL="http://localhost:3000"
+NEXTAUTH_SECRET="your-secret-here-generate-with-openssl-rand-base64-32"
+
+# Google OAuth (optionnel)
+GOOGLE_CLIENT_ID=""
+GOOGLE_CLIENT_SECRET=""
+
+# OpenAI API (pour l'IA)
+OPENAI_API_KEY="sk-your-openai-api-key"
+
+# Pinecone (pour le RAG - optionnel pour MVP)
+PINECONE_API_KEY=""
+PINECONE_ENVIRONMENT=""
+PINECONE_INDEX=""
+
+# Chiffrement des données sensibles
+ENCRYPTION_KEY="your-32-bytes-hex-key-here"
+
+# Environment
+NODE_ENV="development"
+

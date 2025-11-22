@@ -1,0 +1,212 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// UTILISATEURS
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  emailVerified DateTime?
+  name          String?
+  password      String? // Hash bcrypt (null si OAuth)
+  image         String?
+
+  // Préférences
+  currency String @default("EUR")
+  language String @default("fr")
+
+  // Relations
+  accounts      Account[]
+  sessions      Session[]
+  incomes       Income[]
+  expenses      Expense[]
+  subscriptions Subscription[]
+  categories    Category[]
+  budgets       Budget[]
+  goals         Goal[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// AUTH (NextAuth)
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// REVENUS
+model Income {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name        String // "Salaire", "Freelance", etc.
+  amount      Float
+  frequency   String // "monthly", "once", "weekly", "yearly"
+  date        DateTime // Date de réception
+
+  description String?
+  isRecurring Boolean  @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([date])
+}
+
+// DÉPENSES
+model Expense {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  categoryId String?
+  category   Category? @relation(fields: [categoryId], references: [id])
+
+  name        String
+  amount      Float
+  date        DateTime
+
+  status      String  @default("pending") // "pending", "paid"
+  description String?
+
+  // Import bancaire
+  isImported    Boolean @default(false)
+  transactionId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([categoryId])
+  @@index([date])
+}
+
+// ABONNEMENTS
+model Subscription {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  categoryId String?
+  category   Category? @relation(fields: [categoryId], references: [id])
+
+  name        String // "YouTube Premium", "Revolut", etc.
+  amount      Float
+  frequency   String   @default("monthly") // "monthly", "yearly"
+  billingDate Int // Jour du mois (1-31)
+
+  isActive    Boolean @default(true)
+  description String?
+  url         String? // Lien pour gérer l'abo
+
+  // Notifications
+  reminderDays Int @default(3) // Rappel X jours avant
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+}
+
+// CATÉGORIES
+model Category {
+  id     String  @id @default(cuid())
+  userId String? // Null = catégorie par défaut
+  user   User?   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name  String
+  icon  String? // Nom d'icône Lucide
+  color String? // Code couleur hex
+
+  isDefault Boolean @default(false)
+
+  expenses      Expense[]
+  subscriptions Subscription[]
+  budgets       Budget[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+}
+
+// BUDGETS (par catégorie et par mois)
+model Budget {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  categoryId String
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  amount Float
+  month  DateTime // Premier jour du mois
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, categoryId, month])
+  @@index([userId])
+}
+
+// OBJECTIFS FINANCIERS
+model Goal {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name          String // "Vacances en Italie", "Fonds d'urgence"
+  targetAmount  Float
+  currentAmount Float @default(0)
+  deadline      DateTime?
+
+  description String?
+  isCompleted Boolean  @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+}
+
