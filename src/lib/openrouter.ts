@@ -101,10 +101,10 @@ export function prepareSecureFinancialContext(
 
 // Appeler l'API OpenRouter
 export async function chatCompletion(options: ChatCompletionOptions): Promise<string> {
-  const apiKey = process.env.OPENROUTER_API_KEY;
+  const apiKey = process.env.OPENROUTER_API_KEY?.trim();
   
   if (!apiKey) {
-    throw new Error('OPENROUTER_API_KEY is not configured');
+    throw new Error('OPENROUTER_API_KEY is not configured. Please add it to your .env.local file.');
   }
 
   const response = await fetch(OPENROUTER_API_URL, {
@@ -135,10 +135,10 @@ export async function chatCompletion(options: ChatCompletionOptions): Promise<st
 
 // Stream la réponse de l'IA
 export async function* streamChatCompletion(options: ChatCompletionOptions): AsyncGenerator<string> {
-  const apiKey = process.env.OPENROUTER_API_KEY;
+  const apiKey = process.env.OPENROUTER_API_KEY?.trim();
   
   if (!apiKey) {
-    throw new Error('OPENROUTER_API_KEY is not configured');
+    throw new Error('OPENROUTER_API_KEY is not configured. Please add it to your .env.local file.');
   }
 
   const response = await fetch(OPENROUTER_API_URL, {
