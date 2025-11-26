@@ -30,23 +30,37 @@ export default async function DashboardPage() {
   const today = new Date();
   const startDate = getFirstDayOfMonth();
   const endDate = getLastDayOfMonth();
-  const daysInMonth = endDate.getDate();
+
+  // Date de début étendue pour l'historique (6 mois en arrière)
+  const historicalStartDate = new Date();
+  historicalStartDate.setMonth(historicalStartDate.getMonth() - 6);
+  historicalStartDate.setDate(1);
 
   // 1. Récupération massive des données
   const [
+    // Revenus du mois courant
     incomes, 
+    // Dépenses du mois courant
     expenses, 
+    // Tous les abonnements
     subscriptions,
+    // Objectifs
     goals,
+    // Groupement par catégorie (mois courant)
     expensesByCategory,
-    allCategories
+    // Catégories
+    allCategories,
+    // NOUVEAU: Historique complet des revenus (6 mois)
+    allIncomes,
+    // NOUVEAU: Historique complet des dépenses (6 mois)
+    allExpenses,
   ] = await Promise.all([
-    // Tous les revenus du mois
+    // Revenus du mois courant
     prisma.income.findMany({
       where: { userId: session.user.id, date: { gte: startDate, lte: endDate } },
       orderBy: { date: 'asc' }
     }),
-    // Toutes les dépenses du mois
+    // Dépenses du mois courant
     prisma.expense.findMany({
       where: { userId: session.user.id, date: { gte: startDate, lte: endDate } },
       orderBy: { date: 'asc' }
@@ -66,13 +80,23 @@ export default async function DashboardPage() {
       where: { userId: session.user.id, date: { gte: startDate, lte: endDate } },
       _sum: { amount: true },
     }),
-    // Catégories pour les labels
+    // Catégories
     prisma.category.findMany({
       where: { OR: [{ userId: session.user.id }, { isDefault: true }] }
-    })
+    }),
+    // NOUVEAU: Historique complet des revenus
+    prisma.income.findMany({
+      where: { userId: session.user.id, date: { gte: historicalStartDate } },
+      orderBy: { date: 'asc' }
+    }),
+    // NOUVEAU: Historique complet des dépenses
+    prisma.expense.findMany({
+      where: { userId: session.user.id, date: { gte: historicalStartDate } },
+      orderBy: { date: 'asc' }
+    }),
   ]);
 
-  // 2. Calculs des Totaux
+  // 2. Calculs des Totaux (mois courant)
   const totalIncome = incomes.reduce((sum, i) => sum + i.amount, 0);
   const totalExpenseVariable = expenses.reduce((sum, e) => sum + e.amount, 0);
   
@@ -85,30 +109,7 @@ export default async function DashboardPage() {
   const totalExpenseReal = totalExpenseVariable; 
   const balance = totalIncome - totalExpenseReal;
 
-  // 3. Construction de la courbe d'évolution
-  const chartData = [];
-  let runningBalance = 0;
-  
-  for (let d = 1; d <= daysInMonth; d++) {
-    const dayIncome = incomes
-      .filter(i => new Date(i.date).getDate() === d)
-      .reduce((sum, i) => sum + i.amount, 0);
-      
-    const dayExpense = expenses
-      .filter(e => new Date(e.date).getDate() === d)
-      .reduce((sum, e) => sum + e.amount, 0);
-
-    runningBalance += (dayIncome - dayExpense);
-    
-    chartData.push({
-      date: `${d}/${startDate.getMonth() + 1}`,
-      solde: runningBalance,
-      revenus: dayIncome,
-      depenses: dayExpense
-    });
-  }
-
-  // 4. Intelligence Prévisionnelle
+  // 3. Intelligence Prévisionnelle
   const currentDay = today.getDate();
   const pendingSubscriptions = activeSubscriptions.filter(s => s.billingDate > currentDay);
   const pendingSubscriptionCost = pendingSubscriptions.reduce((sum, s) => sum + s.amount, 0);
@@ -124,7 +125,7 @@ export default async function DashboardPage() {
     };
   }).sort((a, b) => b.value - a.value);
 
-  // Activité récente fusionnée
+  // Activité récente fusionnée (mois courant)
   const recentActivity = [
     ...incomes.map(i => ({ 
       id: i.id,
@@ -142,6 +143,35 @@ export default async function DashboardPage() {
     }))
   ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
    .slice(0, 5);
+
+  // NOUVEAU: Toutes les transactions pour le graphique avancé
+  const allTransactions = [
+    ...allIncomes.map(i => ({ 
+      id: i.id,
+      name: i.name,
+      amount: i.amount,
+      date: i.date.toISOString(),
+      type: 'income' as const 
+    })),
+    ...allExpenses.map(e => ({ 
+      id: e.id,
+      name: e.name,
+      amount: e.amount,
+      date: e.date.toISOString(),
+      type: 'expense' as const 
+    }))
+  ].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+  // NOUVEAU: Revenus récurrents pour les projections
+  const recurringIncomes = allIncomes
+    .filter(i => i.isRecurring)
+    .map(i => ({
+      id: i.id,
+      name: i.name,
+      amount: i.amount,
+      frequency: i.frequency,
+      isRecurring: i.isRecurring,
+    }));
 
   // Formater les objectifs
   const formattedGoals = goals.map(g => ({
@@ -171,9 +201,10 @@ export default async function DashboardPage() {
     projectedBalance,
     pendingSubscriptionCost,
     totalSubscriptionCost,
-    chartData,
     pieData,
     recentActivity,
+    allTransactions,
+    recurringIncomes,
     goals: formattedGoals,
     subscriptions: formattedSubscriptions,
   };

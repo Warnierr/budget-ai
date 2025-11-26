@@ -3,8 +3,8 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { formatCurrency } from "@/lib/utils";
-import { BalanceAreaChart } from "@/components/charts/balance-area";
 import { SpendingPieChart } from "@/components/charts/spending-pie";
+import { BalanceEvolution } from "@/components/charts/balance-evolution";
 import { WidgetGoals } from "@/components/dashboard/widget-goals";
 import { WidgetSubscriptions } from "@/components/dashboard/widget-subscriptions";
 import { WidgetSettings, WidgetPreferences } from "@/components/dashboard/widget-settings";
@@ -14,7 +14,6 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   Wallet,
-  TrendingUp,
   CalendarRange,
   ArrowRight,
   AlertCircle,
@@ -33,7 +32,6 @@ interface DashboardClientProps {
     projectedBalance: number;
     pendingSubscriptionCost: number;
     totalSubscriptionCost: number;
-    chartData: Array<{ date: string; solde: number; revenus: number; depenses: number }>;
     pieData: Array<{ name: string; value: number; color?: string }>;
     recentActivity: Array<{
       id: string;
@@ -41,6 +39,21 @@ interface DashboardClientProps {
       amount: number;
       date: string;
       type: 'income' | 'expense';
+    }>;
+    // Pour le nouveau graphique avancé
+    allTransactions: Array<{
+      id: string;
+      name: string;
+      amount: number;
+      date: string;
+      type: 'income' | 'expense';
+    }>;
+    recurringIncomes: Array<{
+      id: string;
+      name: string;
+      amount: number;
+      frequency: string;
+      isRecurring: boolean;
     }>;
     goals: Array<{
       id: string;
@@ -104,9 +117,10 @@ export function DashboardClient({ data, initialPreferences }: DashboardClientPro
     projectedBalance,
     pendingSubscriptionCost,
     totalSubscriptionCost,
-    chartData,
     pieData,
     recentActivity,
+    allTransactions,
+    recurringIncomes,
     goals,
     subscriptions,
   } = data;
@@ -239,24 +253,14 @@ export function DashboardClient({ data, initialPreferences }: DashboardClientPro
       <div className="grid gap-6 md:grid-cols-7">
         {/* Colonne principale */}
         <div className="md:col-span-5 space-y-6">
-          {/* Graphique Principal */}
+          {/* Graphique Principal - Évolution avancée */}
           {preferences.chart && (
-            <Card className="shadow-sm border-slate-100">
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div className="space-y-1">
-                    <CardTitle className="text-lg flex items-center gap-2">
-                      <TrendingUp className="h-5 w-5 text-blue-600" />
-                      Évolution du solde
-                    </CardTitle>
-                    <CardDescription>Votre trésorerie au fil des jours</CardDescription>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="pl-0">
-                <BalanceAreaChart data={chartData} />
-              </CardContent>
-            </Card>
+            <BalanceEvolution
+              transactions={allTransactions}
+              subscriptions={subscriptions}
+              recurringIncomes={recurringIncomes}
+              currentBalance={balance}
+            />
           )}
 
           {/* Grille 2 colonnes */}
