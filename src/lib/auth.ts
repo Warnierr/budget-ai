@@ -25,31 +25,30 @@ export const authOptions: NextAuthOptions = {
         password: { label: 'Mot de passe', type: 'password' },
       },
       async authorize(credentials) {
+        console.log('🔐 [AUTH] Authorize attempt for:', credentials?.email);
+        
         if (!credentials?.email || !credentials?.password) {
           throw new Error('Email et mot de passe requis');
         }
 
-        // Validation
-        const validated = loginSchema.safeParse(credentials);
-        if (!validated.success) {
-          throw new Error('Email ou mot de passe invalide');
-        }
-
         // Récupérer l'utilisateur
         const user = await prisma.user.findUnique({
-          where: { email: validated.data.email },
+          where: { email: credentials.email },
         });
 
         if (!user || !user.password) {
+          console.log('❌ [AUTH] User not found or no password');
           throw new Error('Email ou mot de passe incorrect');
         }
 
         // Vérifier le mot de passe
-        const isValid = await bcrypt.compare(validated.data.password, user.password);
+        const isValid = await bcrypt.compare(credentials.password, user.password);
         if (!isValid) {
+          console.log('❌ [AUTH] Invalid password');
           throw new Error('Email ou mot de passe incorrect');
         }
 
+        console.log('✅ [AUTH] Login successful for user:', user.id);
         return {
           id: user.id,
           email: user.email,
@@ -66,18 +65,21 @@ export const authOptions: NextAuthOptions = {
   callbacks: {
     async jwt({ token, user }) {
       if (user) {
+        console.log('🎫 [AUTH] JWT Callback - Adding user to token:', user.id);
         token.id = user.id;
       }
       return token;
     },
     async session({ session, token }) {
-      if (session.user) {
+      console.log('📝 [AUTH] Session Callback - Token ID:', token.id);
+      if (session.user && token.id) {
         session.user.id = token.id as string;
       }
       return session;
     },
   },
-  secret: process.env.NEXTAUTH_SECRET,
+  debug: true, // Enable debug messages in console
+  secret: process.env.NEXTAUTH_SECRET || "secret-de-fallback-pour-dev-uniquement",
 };
 
 /**
@@ -93,4 +95,3 @@ export async function hashPassword(password: string): Promise<string> {
 export async function verifyPassword(password: string, hashedPassword: string): Promise<boolean> {
   return bcrypt.compare(password, hashedPassword);
 }
-
