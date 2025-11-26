@@ -4,6 +4,8 @@ import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { incomeSchema } from '@/lib/validations';
 
+export const dynamic = 'force-dynamic';
+
 // GET - Liste des revenus
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -15,6 +17,15 @@ export async function GET(req: NextRequest) {
     const incomes = await prisma.income.findMany({
       where: { userId: session.user.id },
       orderBy: { date: 'desc' },
+      include: {
+        bankAccount: {
+          select: {
+            id: true,
+            name: true,
+            color: true,
+          }
+        }
+      }
     });
 
     return NextResponse.json(incomes);
@@ -47,6 +58,7 @@ export async function POST(req: NextRequest) {
       data: {
         ...validated.data,
         userId: session.user.id,
+        bankAccountId: body.bankAccountId || null,
       },
     });
 

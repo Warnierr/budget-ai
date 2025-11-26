@@ -4,6 +4,8 @@ import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { expenseSchema } from '@/lib/validations';
 
+export const dynamic = 'force-dynamic';
+
 // GET - Liste des dépenses
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -16,6 +18,13 @@ export async function GET(req: NextRequest) {
       where: { userId: session.user.id },
       include: {
         category: true,
+        bankAccount: {
+          select: {
+            id: true,
+            name: true,
+            color: true,
+          }
+        }
       },
       orderBy: { date: 'desc' },
     });
@@ -50,9 +59,17 @@ export async function POST(req: NextRequest) {
       data: {
         ...validated.data,
         userId: session.user.id,
+        bankAccountId: body.bankAccountId || null,
       },
       include: {
         category: true,
+        bankAccount: {
+          select: {
+            id: true,
+            name: true,
+            color: true,
+          }
+        }
       },
     });
 

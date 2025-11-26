@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { formatCurrency } from "@/lib/utils";
 import { SpendingPieChart } from "@/components/charts/spending-pie";
@@ -9,6 +9,7 @@ import { WidgetGoals } from "@/components/dashboard/widget-goals";
 import { WidgetSubscriptions } from "@/components/dashboard/widget-subscriptions";
 import { WidgetAccounts } from "@/components/dashboard/widget-accounts";
 import { WidgetSettings, WidgetPreferences } from "@/components/dashboard/widget-settings";
+import { AccountSelector, AccountTypeInfo } from "@/components/dashboard/account-selector";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -19,11 +20,15 @@ import {
   ArrowRight,
   AlertCircle,
   Sparkles,
-  Plus
+  Plus,
+  PiggyBank,
+  TrendingUp as TrendingUpIcon,
+  Coins
 } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 
 const STORAGE_KEY = 'budget-ai-dashboard-widgets';
+const ACCOUNT_STORAGE_KEY = 'budget-ai-selected-account';
 
 interface DashboardClientProps {
   data: {
@@ -48,6 +53,7 @@ interface DashboardClientProps {
       amount: number;
       date: string;
       type: 'income' | 'expense';
+      bankAccountId?: string | null;
     }>;
     recurringIncomes: Array<{
       id: string;
@@ -71,6 +77,7 @@ interface DashboardClientProps {
       frequency: string;
       billingDate: number;
       isActive: boolean;
+      bankAccountId?: string | null;
     }>;
     accounts: Array<{
       id: string;
@@ -87,6 +94,7 @@ interface DashboardClientProps {
 
 export function DashboardClient({ data, initialPreferences }: DashboardClientProps) {
   const [preferences, setPreferences] = useState<WidgetPreferences>(initialPreferences);
+  const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
   const { toast } = useToast();
 
   // Charger les préférences depuis localStorage au montage
@@ -97,10 +105,63 @@ export function DashboardClient({ data, initialPreferences }: DashboardClientPro
         const parsed = JSON.parse(saved);
         setPreferences({ ...initialPreferences, ...parsed });
       }
+      // Charger le compte sélectionné
+      const savedAccount = localStorage.getItem(ACCOUNT_STORAGE_KEY);
+      if (savedAccount) {
+        setSelectedAccountId(savedAccount === 'null' ? null : savedAccount);
+      }
     } catch {
       // Ignorer les erreurs de parsing
     }
   }, [initialPreferences]);
+
+  // Sauvegarder le compte sélectionné
+  const handleSelectAccount = (accountId: string | null) => {
+    setSelectedAccountId(accountId);
+    localStorage.setItem(ACCOUNT_STORAGE_KEY, accountId || 'null');
+  };
+
+  // Obtenir le compte sélectionné
+  const selectedAccount = selectedAccountId 
+    ? data.accounts.find(a => a.id === selectedAccountId) 
+    : null;
+
+  // Filtrer les données selon le compte sélectionné
+  const filteredData = useMemo(() => {
+    if (!selectedAccountId) {
+      // Tous les comptes - données originales
+      return {
+        transactions: data.allTransactions,
+        subscriptions: data.subscriptions,
+        balance: data.balance,
+        totalIncome: data.totalIncome,
+        totalExpenseReal: data.totalExpenseReal,
+      };
+    }
+
+    // Filtrer par compte
+    const accountTransactions = data.allTransactions.filter(
+      t => t.bankAccountId === selectedAccountId
+    );
+    const accountSubscriptions = data.subscriptions.filter(
+      s => s.bankAccountId === selectedAccountId
+    );
+
+    // Recalculer les totaux pour ce compte
+    const accountIncomes = accountTransactions.filter(t => t.type === 'income');
+    const accountExpenses = accountTransactions.filter(t => t.type === 'expense');
+    
+    const totalIncome = accountIncomes.reduce((sum, t) => sum + t.amount, 0);
+    const totalExpense = accountExpenses.reduce((sum, t) => sum + t.amount, 0);
+
+    return {
+      transactions: accountTransactions,
+      subscriptions: accountSubscriptions,
+      balance: selectedAccount?.currentBalance || 0,
+      totalIncome,
+      totalExpenseReal: totalExpense,
+    };
+  }, [selectedAccountId, data, selectedAccount]);
 
   const handleSavePreferences = async (newPrefs: WidgetPreferences) => {
     try {
@@ -136,54 +197,142 @@ export function DashboardClient({ data, initialPreferences }: DashboardClientPro
     accounts,
   } = data;
 
+  // Obtenir les conseils adaptés au type de compte
+  const getAccountAdvice = () => {
+    if (!selectedAccount) {
+      return {
+        positive: "🎉 Votre patrimoine global est positif ! Continuez à diversifier vos placements.",
+        negative: "⚠️ Attention à votre solde global. Vérifiez vos comptes courants."
+      };
+    }
+
+    const advices: Record<string, { positive: string; negative: string }> = {
+      checking: {
+        positive: "🎉 Votre compte courant est sain ! Pensez à transférer l'excédent vers l'épargne.",
+        negative: "⚠️ Votre compte courant est dans le rouge. Réduisez les dépenses non essentielles."
+      },
+      savings: {
+        positive: "💰 Excellent ! Votre épargne grandit. Continuez à alimenter ce compte régulièrement.",
+        negative: "📉 Votre épargne diminue. Évitez les retraits sauf urgence."
+      },
+      investment: {
+        positive: "📈 Vos investissements performent bien ! Restez patient sur le long terme.",
+        negative: "📉 Vos investissements sont en baisse. C'est normal, ne vendez pas dans la panique."
+      },
+      crypto: {
+        positive: "🚀 Vos cryptos sont en hausse ! N'oubliez pas de sécuriser une partie des gains.",
+        negative: "📉 Marché baissier. HODL et n'investissez que ce que vous pouvez perdre."
+      }
+    };
+
+    return advices[selectedAccount.type] || advices.checking;
+  };
+
+  const accountAdvice = getAccountAdvice();
+
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Tableau de bord</h1>
-          <p className="text-gray-500">
-            Vos finances du mois de{" "}
-            <span className="font-semibold text-gray-900 capitalize">
-              {new Date().toLocaleDateString("fr-FR", { month: "long", year: "numeric" })}
-            </span>
-          </p>
+      {/* Header avec sélecteur de compte */}
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Tableau de bord</h1>
+            <p className="text-gray-500">
+              Vos finances du mois de{" "}
+              <span className="font-semibold text-gray-900 capitalize">
+                {new Date().toLocaleDateString("fr-FR", { month: "long", year: "numeric" })}
+              </span>
+            </p>
+          </div>
+          <div className="flex gap-2 flex-wrap">
+            <WidgetSettings preferences={preferences} onSave={handleSavePreferences} />
+            <Link href="/dashboard/incomes">
+              <Button variant="outline" size="sm" className="gap-2">
+                <ArrowUpRight className="h-4 w-4 text-green-600" />
+                Revenu
+              </Button>
+            </Link>
+            <Link href="/dashboard/expenses">
+              <Button variant="outline" size="sm" className="gap-2">
+                <ArrowDownRight className="h-4 w-4 text-red-600" />
+                Dépense
+              </Button>
+            </Link>
+          </div>
         </div>
-        <div className="flex gap-2">
-          <WidgetSettings preferences={preferences} onSave={handleSavePreferences} />
-          <Link href="/dashboard/incomes">
-            <Button variant="outline" size="sm" className="gap-2">
-              <ArrowUpRight className="h-4 w-4 text-green-600" />
-              Revenu
-            </Button>
-          </Link>
-          <Link href="/dashboard/expenses">
-            <Button variant="outline" size="sm" className="gap-2">
-              <ArrowDownRight className="h-4 w-4 text-red-600" />
-              Dépense
-            </Button>
-          </Link>
-        </div>
+
+        {/* Sélecteur de compte */}
+        {accounts.length > 0 && (
+          <div className="flex flex-col md:flex-row md:items-center gap-4">
+            <AccountSelector 
+              accounts={accounts}
+              selectedAccountId={selectedAccountId}
+              onSelectAccount={handleSelectAccount}
+            />
+            {selectedAccount && (
+              <div className="flex items-center gap-2 text-sm text-gray-500">
+                <span className="px-2 py-1 rounded-full text-xs font-medium"
+                  style={{ 
+                    backgroundColor: `${selectedAccount.color || "#6B7280"}15`,
+                    color: selectedAccount.color || "#6B7280"
+                  }}
+                >
+                  {selectedAccount.type === 'checking' && 'Compte courant'}
+                  {selectedAccount.type === 'savings' && 'Épargne'}
+                  {selectedAccount.type === 'investment' && 'Investissement'}
+                  {selectedAccount.type === 'crypto' && 'Crypto'}
+                </span>
+                {selectedAccount.bank && (
+                  <span className="text-gray-400">• {selectedAccount.bank}</span>
+                )}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Cartes KPIs Intelligentes */}
       <div className="grid gap-6 md:grid-cols-3">
-        {/* Solde Réel */}
+        {/* Solde Réel - adapté au compte sélectionné */}
         {preferences.balance && (
-          <Card className="relative overflow-hidden bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white border-none shadow-xl">
+          <Card className={`relative overflow-hidden border-none shadow-xl ${
+            selectedAccount?.type === 'savings' 
+              ? 'bg-gradient-to-br from-green-800 via-green-700 to-green-800' 
+              : selectedAccount?.type === 'investment'
+              ? 'bg-gradient-to-br from-purple-800 via-purple-700 to-purple-800'
+              : selectedAccount?.type === 'crypto'
+              ? 'bg-gradient-to-br from-orange-800 via-orange-700 to-orange-800'
+              : 'bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900'
+          } text-white`}>
             <div className="absolute top-0 right-0 p-4 opacity-10">
-              <Wallet className="h-24 w-24" />
+              {selectedAccount?.type === 'savings' ? (
+                <PiggyBank className="h-24 w-24" />
+              ) : selectedAccount?.type === 'investment' ? (
+                <TrendingUpIcon className="h-24 w-24" />
+              ) : selectedAccount?.type === 'crypto' ? (
+                <Coins className="h-24 w-24" />
+              ) : (
+                <Wallet className="h-24 w-24" />
+              )}
             </div>
             <CardHeader className="pb-2">
-              <CardDescription className="text-slate-300">Solde actuel</CardDescription>
+              <CardDescription className="text-slate-300">
+                {selectedAccount ? selectedAccount.name : 'Patrimoine total'}
+              </CardDescription>
               <CardTitle className="text-4xl font-bold tracking-tight">
-                {formatCurrency(balance)}
+                {formatCurrency(filteredData.balance)}
               </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="flex items-center gap-2 text-sm text-slate-300 mt-4">
-                <div className={`w-2 h-2 rounded-full ${balance >= 0 ? "bg-green-400" : "bg-red-400"}`}></div>
-                <span>Trésorerie disponible instantanée</span>
+                <div className={`w-2 h-2 rounded-full ${filteredData.balance >= 0 ? "bg-green-400" : "bg-red-400"}`}></div>
+                <span>
+                  {selectedAccount?.type === 'savings' && 'Épargne disponible'}
+                  {selectedAccount?.type === 'investment' && 'Valeur du portefeuille'}
+                  {selectedAccount?.type === 'crypto' && 'Valeur crypto'}
+                  {selectedAccount?.type === 'checking' && 'Trésorerie disponible'}
+                  {!selectedAccount && 'Patrimoine consolidé'}
+                </span>
               </div>
             </CardContent>
           </Card>
@@ -224,11 +373,17 @@ export function DashboardClient({ data, initialPreferences }: DashboardClientPro
           </Card>
         )}
 
-        {/* Résumé des Flux */}
+        {/* Résumé des Flux - adapté au compte */}
         {preferences.flows && (
           <Card className="bg-white shadow-sm border-slate-100">
             <CardHeader className="pb-2">
-              <CardDescription>Flux mensuels</CardDescription>
+              <CardDescription>
+                {selectedAccount?.type === 'savings' && 'Mouvements épargne'}
+                {selectedAccount?.type === 'investment' && 'Performance'}
+                {selectedAccount?.type === 'crypto' && 'Mouvements crypto'}
+                {selectedAccount?.type === 'checking' && 'Flux mensuels'}
+                {!selectedAccount && 'Flux mensuels'}
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex justify-between items-center">
@@ -236,23 +391,35 @@ export function DashboardClient({ data, initialPreferences }: DashboardClientPro
                   <div className="p-1 bg-green-100 rounded">
                     <ArrowUpRight className="h-4 w-4 text-green-600" />
                   </div>
-                  <span className="text-sm text-gray-600">Entrées</span>
+                  <span className="text-sm text-gray-600">
+                    {selectedAccount?.type === 'savings' ? 'Versements' : 
+                     selectedAccount?.type === 'investment' ? 'Apports' :
+                     selectedAccount?.type === 'crypto' ? 'Achats/Dépôts' : 'Entrées'}
+                  </span>
                 </div>
-                <span className="font-bold text-green-600">{formatCurrency(totalIncome)}</span>
+                <span className="font-bold text-green-600">{formatCurrency(filteredData.totalIncome)}</span>
               </div>
               <div className="flex justify-between items-center">
                 <div className="flex items-center gap-2">
                   <div className="p-1 bg-red-100 rounded">
                     <ArrowDownRight className="h-4 w-4 text-red-600" />
                   </div>
-                  <span className="text-sm text-gray-600">Sorties & Abos</span>
+                  <span className="text-sm text-gray-600">
+                    {selectedAccount?.type === 'savings' ? 'Retraits' : 
+                     selectedAccount?.type === 'investment' ? 'Retraits' :
+                     selectedAccount?.type === 'crypto' ? 'Ventes/Retraits' : 'Sorties & Abos'}
+                  </span>
                 </div>
-                <span className="font-bold text-red-600">{formatCurrency(totalExpenseReal)}</span>
+                <span className="font-bold text-red-600">{formatCurrency(filteredData.totalExpenseReal)}</span>
               </div>
               <div className="pt-2 border-t flex justify-between items-center text-xs text-gray-500">
-                <span>Taux d&apos;épargne</span>
-                <span className={balance > 0 ? "text-green-600 font-bold" : "text-gray-500"}>
-                  {totalIncome > 0 ? Math.round((balance / totalIncome) * 100) : 0}%
+                <span>
+                  {selectedAccount?.type === 'savings' ? 'Taux d\'épargne' :
+                   selectedAccount?.type === 'investment' ? 'Rendement' :
+                   selectedAccount?.type === 'crypto' ? 'Variation' : 'Taux d\'épargne'}
+                </span>
+                <span className={filteredData.balance > 0 ? "text-green-600 font-bold" : "text-gray-500"}>
+                  {filteredData.totalIncome > 0 ? Math.round(((filteredData.totalIncome - filteredData.totalExpenseReal) / filteredData.totalIncome) * 100) : 0}%
                 </span>
               </div>
             </CardContent>
@@ -264,13 +431,13 @@ export function DashboardClient({ data, initialPreferences }: DashboardClientPro
       <div className="grid gap-6 md:grid-cols-7">
         {/* Colonne principale */}
         <div className="md:col-span-5 space-y-6">
-          {/* Graphique Principal - Évolution avancée */}
+          {/* Graphique Principal - Évolution avancée - filtré par compte */}
           {preferences.chart && (
             <BalanceEvolution
-              transactions={allTransactions}
-              subscriptions={subscriptions}
+              transactions={filteredData.transactions}
+              subscriptions={filteredData.subscriptions}
               recurringIncomes={recurringIncomes}
-              currentBalance={balance}
+              currentBalance={filteredData.balance}
             />
           )}
 
@@ -297,29 +464,72 @@ export function DashboardClient({ data, initialPreferences }: DashboardClientPro
             {/* Widget Comptes bancaires */}
             {preferences.accounts && <WidgetAccounts accounts={accounts} />}
 
-            {/* Carte Conseil */}
+            {/* Carte Conseil - adapté au type de compte */}
             {preferences.advice && (
-              <Card className="bg-amber-50 border-amber-100 flex flex-col justify-center">
+              <Card className={`flex flex-col justify-center ${
+                selectedAccount?.type === 'savings' ? 'bg-green-50 border-green-100' :
+                selectedAccount?.type === 'investment' ? 'bg-purple-50 border-purple-100' :
+                selectedAccount?.type === 'crypto' ? 'bg-orange-50 border-orange-100' :
+                'bg-amber-50 border-amber-100'
+              }`}>
                 <CardContent className="p-6 text-center space-y-4">
-                  <div className="mx-auto w-12 h-12 bg-amber-100 rounded-full flex items-center justify-center">
-                    <AlertCircle className="h-6 w-6 text-amber-600" />
+                  <div className={`mx-auto w-12 h-12 rounded-full flex items-center justify-center ${
+                    selectedAccount?.type === 'savings' ? 'bg-green-100' :
+                    selectedAccount?.type === 'investment' ? 'bg-purple-100' :
+                    selectedAccount?.type === 'crypto' ? 'bg-orange-100' :
+                    'bg-amber-100'
+                  }`}>
+                    {selectedAccount?.type === 'savings' ? (
+                      <PiggyBank className="h-6 w-6 text-green-600" />
+                    ) : selectedAccount?.type === 'investment' ? (
+                      <TrendingUpIcon className="h-6 w-6 text-purple-600" />
+                    ) : selectedAccount?.type === 'crypto' ? (
+                      <Coins className="h-6 w-6 text-orange-600" />
+                    ) : (
+                      <AlertCircle className="h-6 w-6 text-amber-600" />
+                    )}
                   </div>
                   <div>
-                    <h3 className="font-bold text-amber-900 text-lg">Analyse rapide</h3>
-                    <p className="text-amber-700 mt-2 text-sm">
-                      {balance > 0
-                        ? "🎉 Vous êtes dans le vert ! C'est le moment idéal pour mettre de côté dans vos Objectifs."
-                        : "⚠️ Attention, vos dépenses dépassent vos revenus ce mois-ci. Vérifiez vos abonnements."}
+                    <h3 className={`font-bold text-lg ${
+                      selectedAccount?.type === 'savings' ? 'text-green-900' :
+                      selectedAccount?.type === 'investment' ? 'text-purple-900' :
+                      selectedAccount?.type === 'crypto' ? 'text-orange-900' :
+                      'text-amber-900'
+                    }`}>
+                      {selectedAccount?.type === 'savings' ? 'Conseil Épargne' :
+                       selectedAccount?.type === 'investment' ? 'Conseil Investissement' :
+                       selectedAccount?.type === 'crypto' ? 'Conseil Crypto' :
+                       'Analyse rapide'}
+                    </h3>
+                    <p className={`mt-2 text-sm ${
+                      selectedAccount?.type === 'savings' ? 'text-green-700' :
+                      selectedAccount?.type === 'investment' ? 'text-purple-700' :
+                      selectedAccount?.type === 'crypto' ? 'text-orange-700' :
+                      'text-amber-700'
+                    }`}>
+                      {filteredData.balance > 0 ? accountAdvice.positive : accountAdvice.negative}
                     </p>
                   </div>
-                  <Link href="/dashboard/goals">
-                    <Button
-                      variant="outline"
-                      className="border-amber-200 text-amber-800 hover:bg-amber-100"
-                    >
-                      Voir mes objectifs
-                    </Button>
-                  </Link>
+                  {selectedAccount?.type === 'savings' && (
+                    <Link href="/dashboard/goals">
+                      <Button variant="outline" className="border-green-200 text-green-800 hover:bg-green-100">
+                        Définir un objectif
+                      </Button>
+                    </Link>
+                  )}
+                  {selectedAccount?.type === 'investment' && (
+                    <AccountTypeInfo type="investment" />
+                  )}
+                  {selectedAccount?.type === 'crypto' && (
+                    <AccountTypeInfo type="crypto" />
+                  )}
+                  {(!selectedAccount || selectedAccount.type === 'checking') && (
+                    <Link href="/dashboard/goals">
+                      <Button variant="outline" className="border-amber-200 text-amber-800 hover:bg-amber-100">
+                        Voir mes objectifs
+                      </Button>
+                    </Link>
+                  )}
                 </CardContent>
               </Card>
             )}

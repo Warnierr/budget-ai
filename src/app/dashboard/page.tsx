@@ -152,21 +152,23 @@ export default async function DashboardPage() {
   ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
    .slice(0, 5);
 
-  // NOUVEAU: Toutes les transactions pour le graphique avancé
+  // NOUVEAU: Toutes les transactions pour le graphique avancé (avec bankAccountId)
   const allTransactions = [
     ...allIncomes.map(i => ({ 
       id: i.id,
       name: i.name,
       amount: i.amount,
       date: i.date.toISOString(),
-      type: 'income' as const 
+      type: 'income' as const,
+      bankAccountId: i.bankAccountId,
     })),
     ...allExpenses.map(e => ({ 
       id: e.id,
       name: e.name,
       amount: e.amount,
       date: e.date.toISOString(),
-      type: 'expense' as const 
+      type: 'expense' as const,
+      bankAccountId: e.bankAccountId,
     }))
   ].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
@@ -191,7 +193,7 @@ export default async function DashboardPage() {
     isCompleted: g.isCompleted,
   }));
 
-  // Formater les abonnements
+  // Formater les abonnements (avec bankAccountId)
   const formattedSubscriptions = subscriptions.map(s => ({
     id: s.id,
     name: s.name,
@@ -199,6 +201,7 @@ export default async function DashboardPage() {
     frequency: s.frequency,
     billingDate: s.billingDate,
     isActive: s.isActive,
+    bankAccountId: s.bankAccountId,
   }));
 
   // Formater les comptes bancaires avec soldes calculés
