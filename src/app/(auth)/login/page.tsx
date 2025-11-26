@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { signIn } from 'next-auth/react';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -9,7 +10,6 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [loginSuccess, setLoginSuccess] = useState(false);
   const [formData, setFormData] = useState({
     email: '',
     password: '',
@@ -27,46 +27,28 @@ export default function LoginPage() {
     setError('');
 
     try {
-      console.log('🔐 Tentative de connexion:', {
+      // Utiliser NextAuth signIn pour créer une vraie session
+      const result = await signIn('credentials', {
         email: formData.email,
-        passwordLength: formData.password.length,
-        password: formData.password // Pour debug
+        password: formData.password,
+        redirect: false, // On gère la redirection nous-mêmes
       });
 
-      // Vérifier les credentials via l'API
-      const response = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          email: formData.email,
-          password: formData.password,
-        }),
-      });
-
-      console.log('📡 Réponse reçue. Status:', response.status);
-      
-      const data = await response.json();
-      console.log('📦 Données reçues:', data);
-
-      if (response.ok) {
-        console.log('✅ Connexion réussie!');
-        
-        // Stocker l'utilisateur en session
-        sessionStorage.setItem('user', JSON.stringify(data.user));
-        console.log('💾 Utilisateur stocké dans sessionStorage');
-        
-        // Afficher le message de succès au lieu de rediriger
-        setLoginSuccess(true);
+      if (result?.error) {
+        console.error('Erreur de connexion:', result.error);
+        setError('Email ou mot de passe incorrect');
         setIsLoading(false);
-      } else {
-        console.log('❌ Erreur de connexion:', data.error);
-        setError(data.error || 'Email ou mot de passe incorrect');
-        setIsLoading(false);
+        return;
+      }
+
+      if (result?.ok) {
+        console.log('✅ Connexion réussie via NextAuth!');
+        // Rediriger vers le dashboard
+        router.push('/dashboard');
+        router.refresh(); // Forcer le refresh pour mettre à jour la session
       }
     } catch (error) {
-      console.error('💥 Erreur exception:', error);
+      console.error('Erreur exception:', error);
       setError('Erreur de connexion. Veuillez réessayer.');
       setIsLoading(false);
     }
@@ -80,35 +62,7 @@ export default function LoginPage() {
           <p className="text-gray-600 mt-2">Gérez votre budget intelligemment</p>
         </div>
 
-        {loginSuccess ? (
-          // Message de succès avec bouton
-          <div className="bg-white rounded-lg shadow-lg p-8">
-            <div className="text-center">
-              <div className="mb-6">
-                <div className="mx-auto w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mb-4">
-                  <span className="text-4xl">✅</span>
-                </div>
-                <h2 className="text-2xl font-bold text-green-600 mb-2">Connexion réussie !</h2>
-                <p className="text-gray-600 mb-6">
-                  Vous êtes maintenant connecté à Budget AI
-                </p>
-              </div>
-              
-              <a
-                href="/dashboard"
-                className="block w-full bg-blue-600 text-white py-3 px-4 rounded-md hover:bg-blue-700 font-medium text-center"
-              >
-                Accéder au Dashboard →
-              </a>
-              
-              <p className="text-xs text-gray-500 mt-4">
-                Vous allez être redirigé vers votre tableau de bord
-              </p>
-            </div>
-          </div>
-        ) : (
-          // Formulaire de connexion
-          <div className="bg-white rounded-lg shadow-lg p-8">
+        <div className="bg-white rounded-lg shadow-lg p-8">
           <h2 className="text-2xl font-bold mb-2">Connexion</h2>
           <p className="text-gray-600 mb-6">Connectez-vous à votre compte</p>
           
@@ -168,9 +122,6 @@ export default function LoginPage() {
                   {showPassword ? '👁️' : '👁️‍🗨️'}
                 </button>
               </div>
-              <p className="text-xs text-gray-500 mt-1">
-                Mot de passe attendu : <strong>Password123!</strong>
-              </p>
             </div>
 
             <button
@@ -189,7 +140,6 @@ export default function LoginPage() {
             </p>
           </form>
         </div>
-        )}
       </div>
     </div>
   );
