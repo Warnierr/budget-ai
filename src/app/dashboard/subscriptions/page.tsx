@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/use-toast';
 import { Plus, Trash2, ExternalLink, AlertCircle } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
+import { useRouter } from 'next/navigation';
 
 interface Subscription {
   id: string;
@@ -27,9 +28,12 @@ interface Subscription {
 
 export default function SubscriptionsPage() {
   const { toast } = useToast();
+  const router = useRouter();
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isAdding, setIsAdding] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
   const [formData, setFormData] = useState({
     name: '',
     amount: '',
@@ -47,12 +51,22 @@ export default function SubscriptionsPage() {
 
   const fetchSubscriptions = async () => {
     try {
+      setError(null);
       const response = await fetch('/api/subscriptions');
+      
+      if (response.status === 401) {
+        setError("Session expirée. Veuillez vous reconnecter.");
+        return;
+      }
+
       if (response.ok) {
         const data = await response.json();
         setSubscriptions(data);
+      } else {
+        throw new Error('Erreur de chargement');
       }
     } catch (error) {
+      console.error(error);
       toast({
         title: 'Erreur',
         description: 'Impossible de charger les abonnements',
@@ -66,6 +80,7 @@ export default function SubscriptionsPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsAdding(true);
+    setError(null);
 
     try {
       const response = await fetch('/api/subscriptions', {
@@ -79,28 +94,37 @@ export default function SubscriptionsPage() {
         }),
       });
 
-      if (response.ok) {
-        toast({
-          title: 'Abonnement ajouté',
-          description: 'L\'abonnement a été enregistré avec succès',
-        });
-        setFormData({
-          name: '',
-          amount: '',
-          frequency: 'monthly',
-          billingDate: '1',
-          url: '',
-          description: '',
-          reminderDays: '3',
-        });
-        fetchSubscriptions();
-      } else {
-        throw new Error('Erreur lors de l\'ajout');
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Erreur lors de l\'ajout');
       }
+
+      toast({
+        title: 'Succès !',
+        description: 'Abonnement ajouté avec succès.',
+        className: "bg-green-50 border-green-200 text-green-900",
+      });
+
+      setFormData({
+        name: '',
+        amount: '',
+        frequency: 'monthly',
+        billingDate: '1',
+        url: '',
+        description: '',
+        reminderDays: '3',
+      });
+      
+      fetchSubscriptions();
+      router.refresh();
+
     } catch (error) {
+      const message = error instanceof Error ? error.message : 'Une erreur est survenue';
+      setError(message);
       toast({
         title: 'Erreur',
-        description: 'Impossible d\'ajouter l\'abonnement',
+        description: message,
         variant: 'destructive',
       });
     } finally {
@@ -124,6 +148,9 @@ export default function SubscriptionsPage() {
           description: 'L\'abonnement a été supprimé avec succès',
         });
         fetchSubscriptions();
+        router.refresh();
+      } else {
+        throw new Error('Erreur suppression');
       }
     } catch (error) {
       toast({
@@ -147,6 +174,7 @@ export default function SubscriptionsPage() {
           title: isActive ? 'Abonnement désactivé' : 'Abonnement activé',
         });
         fetchSubscriptions();
+        router.refresh();
       }
     } catch (error) {
       toast({
@@ -173,6 +201,14 @@ export default function SubscriptionsPage() {
         <h1 className="text-3xl font-bold">Abonnements</h1>
         <p className="text-gray-600 mt-1">Gérez tous vos abonnements en un seul endroit</p>
       </div>
+
+      {/* Message d'erreur global */}
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded relative flex items-center gap-2" role="alert">
+          <AlertCircle className="h-5 w-5" />
+          <span className="block sm:inline">{error}</span>
+        </div>
+      )}
 
       {/* Résumé */}
       <div className="grid gap-4 md:grid-cols-2">
@@ -290,9 +326,12 @@ export default function SubscriptionsPage() {
                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
               />
             </div>
-            <Button type="submit" disabled={isAdding}>
-              <Plus className="mr-2 h-4 w-4" />
-              {isAdding ? 'Ajout en cours...' : 'Ajouter l\'abonnement'}
+            <Button type="submit" disabled={isAdding} className="w-full md:w-auto">
+              {isAdding ? 'Ajout en cours...' : (
+                <>
+                  <Plus className="mr-2 h-4 w-4" /> Ajouter l'abonnement
+                </>
+              )}
             </Button>
           </form>
         </CardContent>
@@ -306,24 +345,28 @@ export default function SubscriptionsPage() {
         </CardHeader>
         <CardContent>
           {isLoading ? (
-            <p className="text-center text-gray-600">Chargement...</p>
+            <div className="flex justify-center py-8">
+               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
+            </div>
           ) : activeSubscriptions.length === 0 ? (
-            <p className="text-center text-gray-600">Aucun abonnement actif</p>
+            <div className="text-center py-8 text-gray-500 bg-gray-50 rounded-lg border border-dashed">
+              <p>Aucun abonnement actif.</p>
+            </div>
           ) : (
             <div className="space-y-3">
               {activeSubscriptions.map((subscription) => (
                 <div
                   key={subscription.id}
-                  className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50"
+                  className="flex flex-col sm:flex-row sm:items-center justify-between p-4 border rounded-lg hover:bg-gray-50 transition-colors bg-white"
                 >
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2">
-                      <h3 className="font-semibold">{subscription.name}</h3>
-                      <span className="text-xs px-2 py-1 rounded bg-blue-100 text-blue-800">
+                  <div className="flex-1 mb-2 sm:mb-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="font-semibold text-gray-900">{subscription.name}</h3>
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 font-medium">
                         {subscription.frequency === 'monthly' ? 'Mensuel' : 'Annuel'}
                       </span>
                     </div>
-                    <div className="flex items-center gap-4 mt-1 text-sm text-gray-600">
+                    <div className="flex items-center gap-4 mt-1 text-sm text-gray-500">
                       <span className="flex items-center gap-1">
                         <AlertCircle className="h-3 w-3" />
                         Prélèvement le {subscription.billingDate} du mois
@@ -341,7 +384,7 @@ export default function SubscriptionsPage() {
                       )}
                     </div>
                   </div>
-                  <div className="flex items-center gap-4">
+                  <div className="flex items-center justify-between sm:justify-end gap-4 w-full sm:w-auto">
                     <div className="text-right">
                       <span className="text-lg font-bold text-blue-600">{formatCurrency(Number(subscription.amount))}</span>
                       <p className="text-xs text-gray-600">
@@ -350,21 +393,23 @@ export default function SubscriptionsPage() {
                           : ''}
                       </p>
                     </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => toggleActive(subscription.id, subscription.isActive)}
-                    >
-                      Désactiver
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => handleDelete(subscription.id)}
-                      className="text-red-600 hover:text-red-700"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => toggleActive(subscription.id, subscription.isActive)}
+                      >
+                        Désactiver
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleDelete(subscription.id)}
+                        className="text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -385,10 +430,10 @@ export default function SubscriptionsPage() {
               {inactiveSubscriptions.map((subscription) => (
                 <div
                   key={subscription.id}
-                  className="flex items-center justify-between p-4 border rounded-lg bg-gray-50 opacity-60"
+                  className="flex items-center justify-between p-4 border rounded-lg bg-gray-50 opacity-75"
                 >
                   <div className="flex-1">
-                    <h3 className="font-semibold">{subscription.name}</h3>
+                    <h3 className="font-semibold text-gray-700">{subscription.name}</h3>
                   </div>
                   <div className="flex items-center gap-4">
                     <span className="text-sm text-gray-600">{formatCurrency(Number(subscription.amount))}</span>
@@ -403,7 +448,7 @@ export default function SubscriptionsPage() {
                       variant="ghost"
                       size="icon"
                       onClick={() => handleDelete(subscription.id)}
-                      className="text-red-600"
+                      className="text-gray-400 hover:text-red-600 transition-colors"
                     >
                       <Trash2 className="h-4 w-4" />
                     </Button>
@@ -417,4 +462,3 @@ export default function SubscriptionsPage() {
     </div>
   );
 }
-

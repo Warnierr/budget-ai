@@ -6,8 +6,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/use-toast';
-import { Plus, Trash2, Calendar } from 'lucide-react';
+import { Plus, Trash2, Calendar, AlertCircle } from 'lucide-react';
 import { formatCurrency, formatDateShort } from '@/lib/utils';
+import { useRouter } from 'next/navigation';
 
 interface Income {
   id: string;
@@ -21,9 +22,12 @@ interface Income {
 
 export default function IncomesPage() {
   const { toast } = useToast();
+  const router = useRouter();
   const [incomes, setIncomes] = useState<Income[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isAdding, setIsAdding] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  
   const [formData, setFormData] = useState({
     name: '',
     amount: '',
@@ -40,12 +44,24 @@ export default function IncomesPage() {
 
   const fetchIncomes = async () => {
     try {
+      setError(null);
       const response = await fetch('/api/incomes');
+      
+      if (response.status === 401) {
+        setError("Session expirée. Veuillez vous reconnecter.");
+        // Optionnel : rediriger vers login
+        // router.push('/login'); 
+        return;
+      }
+
       if (response.ok) {
         const data = await response.json();
         setIncomes(data);
+      } else {
+        throw new Error('Erreur de chargement');
       }
     } catch (error) {
+      console.error(error);
       toast({
         title: 'Erreur',
         description: 'Impossible de charger les revenus',
@@ -59,6 +75,7 @@ export default function IncomesPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsAdding(true);
+    setError(null);
 
     try {
       const response = await fetch('/api/incomes', {
@@ -70,27 +87,38 @@ export default function IncomesPage() {
         }),
       });
 
-      if (response.ok) {
-        toast({
-          title: 'Revenu ajouté',
-          description: 'Le revenu a été enregistré avec succès',
-        });
-        setFormData({
-          name: '',
-          amount: '',
-          date: new Date().toISOString().split('T')[0],
-          frequency: 'monthly',
-          isRecurring: false,
-          description: '',
-        });
-        fetchIncomes();
-      } else {
-        throw new Error('Erreur lors de l\'ajout');
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Erreur lors de l\'ajout');
       }
+
+      toast({
+        title: 'Succès !',
+        description: 'Revenu ajouté avec succès.',
+        className: "bg-green-50 border-green-200 text-green-900",
+      });
+
+      // Reset form
+      setFormData({
+        name: '',
+        amount: '',
+        date: new Date().toISOString().split('T')[0],
+        frequency: 'monthly',
+        isRecurring: false,
+        description: '',
+      });
+      
+      // Refresh list
+      fetchIncomes();
+      router.refresh(); // Update server components if any
+
     } catch (error) {
+      const message = error instanceof Error ? error.message : 'Une erreur est survenue';
+      setError(message);
       toast({
         title: 'Erreur',
-        description: 'Impossible d\'ajouter le revenu',
+        description: message,
         variant: 'destructive',
       });
     } finally {
@@ -114,6 +142,9 @@ export default function IncomesPage() {
           description: 'Le revenu a été supprimé avec succès',
         });
         fetchIncomes();
+        router.refresh();
+      } else {
+        throw new Error('Erreur suppression');
       }
     } catch (error) {
       toast({
@@ -139,6 +170,14 @@ export default function IncomesPage() {
         <h1 className="text-3xl font-bold">Revenus</h1>
         <p className="text-gray-600 mt-1">Gérez vos entrées d'argent</p>
       </div>
+
+      {/* Message d'erreur global */}
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded relative flex items-center gap-2" role="alert">
+          <AlertCircle className="h-5 w-5" />
+          <span className="block sm:inline">{error}</span>
+        </div>
+      )}
 
       {/* Résumé */}
       <Card>
@@ -231,9 +270,14 @@ export default function IncomesPage() {
                 Revenu récurrent (se répète automatiquement)
               </Label>
             </div>
-            <Button type="submit" disabled={isAdding}>
-              <Plus className="mr-2 h-4 w-4" />
-              {isAdding ? 'Ajout en cours...' : 'Ajouter le revenu'}
+            <Button type="submit" disabled={isAdding} className="w-full md:w-auto">
+              {isAdding ? (
+                'Ajout en cours...'
+              ) : (
+                <>
+                  <Plus className="mr-2 h-4 w-4" /> Ajouter le revenu
+                </>
+              )}
             </Button>
           </form>
         </CardContent>
@@ -246,41 +290,52 @@ export default function IncomesPage() {
         </CardHeader>
         <CardContent>
           {isLoading ? (
-            <p className="text-center text-gray-600">Chargement...</p>
+            <div className="flex justify-center py-8">
+               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
+            </div>
           ) : incomes.length === 0 ? (
-            <p className="text-center text-gray-600">Aucun revenu enregistré</p>
+            <div className="text-center py-8 text-gray-500 bg-gray-50 rounded-lg border border-dashed">
+              <p>Aucun revenu enregistré pour le moment.</p>
+              <p className="text-sm mt-2">Utilisez le formulaire ci-dessus pour commencer.</p>
+            </div>
           ) : (
-            <div className="space-y-2">
+            <div className="space-y-3">
               {incomes.map((income) => (
                 <div
                   key={income.id}
-                  className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50"
+                  className="flex flex-col sm:flex-row sm:items-center justify-between p-4 border rounded-lg hover:bg-gray-50 transition-colors bg-white"
                 >
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2">
-                      <h3 className="font-semibold">{income.name}</h3>
-                      <span className="text-xs px-2 py-1 rounded bg-green-100 text-green-800">
-                        {frequencyLabels[income.frequency]}
+                  <div className="flex-1 mb-2 sm:mb-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="font-semibold text-gray-900">{income.name}</h3>
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-800 font-medium">
+                        {frequencyLabels[income.frequency] || income.frequency}
                       </span>
                       {income.isRecurring && (
-                        <span className="text-xs px-2 py-1 rounded bg-blue-100 text-blue-800">Récurrent</span>
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 font-medium">
+                          Récurrent
+                        </span>
                       )}
                     </div>
-                    <div className="flex items-center gap-4 mt-1 text-sm text-gray-600">
+                    <div className="flex items-center gap-4 mt-1 text-sm text-gray-500">
                       <span className="flex items-center gap-1">
                         <Calendar className="h-3 w-3" />
                         {formatDateShort(income.date)}
                       </span>
-                      {income.description && <span>{income.description}</span>}
+                      {income.description && (
+                        <span className="hidden sm:inline text-gray-400">• {income.description}</span>
+                      )}
                     </div>
                   </div>
-                  <div className="flex items-center gap-4">
-                    <span className="text-lg font-bold text-green-600">+{formatCurrency(Number(income.amount))}</span>
+                  <div className="flex items-center justify-between sm:justify-end gap-4 w-full sm:w-auto">
+                    <span className="text-lg font-bold text-green-600">
+                      +{formatCurrency(Number(income.amount))}
+                    </span>
                     <Button
                       variant="ghost"
                       size="icon"
                       onClick={() => handleDelete(income.id)}
-                      className="text-red-600 hover:text-red-700"
+                      className="text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
                     >
                       <Trash2 className="h-4 w-4" />
                     </Button>
@@ -294,4 +349,3 @@ export default function IncomesPage() {
     </div>
   );
 }
-
