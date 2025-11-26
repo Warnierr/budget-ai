@@ -22,6 +22,9 @@ model User {
   // Préférences
   currency String @default("EUR")
   language String @default("fr")
+  
+  // Préférences Dashboard (JSON stocké en string)
+  dashboardWidgets String @default("{\"balance\":true,\"forecast\":true,\"flows\":true,\"chart\":true,\"pie\":true,\"goals\":true,\"subscriptions\":true,\"activity\":true,\"advice\":true}")
 
   // Relations
   accounts      Account[]

@@ -1,87 +1,187 @@
-export default function DashboardPage() {
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
+import { redirect } from "next/navigation";
+import { getFirstDayOfMonth, getLastDayOfMonth } from "@/lib/utils";
+import { DashboardClient } from "./dashboard-client";
+
+export const dynamic = 'force-dynamic';
+
+// Préférences par défaut
+const DEFAULT_PREFERENCES = {
+  balance: true,
+  forecast: true,
+  flows: true,
+  chart: true,
+  pie: true,
+  goals: true,
+  subscriptions: true,
+  activity: true,
+  advice: true,
+};
+
+export default async function DashboardPage() {
+  const session = await getServerSession(authOptions);
+
+  if (!session?.user) {
+    redirect("/login");
+  }
+
+  const today = new Date();
+  const startDate = getFirstDayOfMonth();
+  const endDate = getLastDayOfMonth();
+  const daysInMonth = endDate.getDate();
+
+  // 1. Récupération massive des données
+  const [
+    incomes, 
+    expenses, 
+    subscriptions,
+    goals,
+    expensesByCategory,
+    allCategories
+  ] = await Promise.all([
+    // Tous les revenus du mois
+    prisma.income.findMany({
+      where: { userId: session.user.id, date: { gte: startDate, lte: endDate } },
+      orderBy: { date: 'asc' }
+    }),
+    // Toutes les dépenses du mois
+    prisma.expense.findMany({
+      where: { userId: session.user.id, date: { gte: startDate, lte: endDate } },
+      orderBy: { date: 'asc' }
+    }),
+    // Tous les abonnements
+    prisma.subscription.findMany({
+      where: { userId: session.user.id },
+    }),
+    // Objectifs
+    prisma.goal.findMany({
+      where: { userId: session.user.id },
+      orderBy: { createdAt: 'desc' }
+    }),
+    // Groupement par catégorie
+    prisma.expense.groupBy({
+      by: ['categoryId'],
+      where: { userId: session.user.id, date: { gte: startDate, lte: endDate } },
+      _sum: { amount: true },
+    }),
+    // Catégories pour les labels
+    prisma.category.findMany({
+      where: { OR: [{ userId: session.user.id }, { isDefault: true }] }
+    })
+  ]);
+
+  // 2. Calculs des Totaux
+  const totalIncome = incomes.reduce((sum, i) => sum + i.amount, 0);
+  const totalExpenseVariable = expenses.reduce((sum, e) => sum + e.amount, 0);
+  
+  // Estimation des abonnements mensuels
+  const activeSubscriptions = subscriptions.filter(s => s.isActive);
+  const totalSubscriptionCost = activeSubscriptions.reduce((sum, s) => {
+    return sum + (s.frequency === 'monthly' ? s.amount : s.amount / 12);
+  }, 0);
+
+  const totalExpenseReal = totalExpenseVariable; 
+  const balance = totalIncome - totalExpenseReal;
+
+  // 3. Construction de la courbe d'évolution
+  const chartData = [];
+  let runningBalance = 0;
+  
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dayIncome = incomes
+      .filter(i => new Date(i.date).getDate() === d)
+      .reduce((sum, i) => sum + i.amount, 0);
+      
+    const dayExpense = expenses
+      .filter(e => new Date(e.date).getDate() === d)
+      .reduce((sum, e) => sum + e.amount, 0);
+
+    runningBalance += (dayIncome - dayExpense);
+    
+    chartData.push({
+      date: `${d}/${startDate.getMonth() + 1}`,
+      solde: runningBalance,
+      revenus: dayIncome,
+      depenses: dayExpense
+    });
+  }
+
+  // 4. Intelligence Prévisionnelle
+  const currentDay = today.getDate();
+  const pendingSubscriptions = activeSubscriptions.filter(s => s.billingDate > currentDay);
+  const pendingSubscriptionCost = pendingSubscriptions.reduce((sum, s) => sum + s.amount, 0);
+  const projectedBalance = balance - pendingSubscriptionCost;
+
+  // Données pour le camembert
+  const pieData = expensesByCategory.map(item => {
+    const category = allCategories.find(c => c.id === item.categoryId);
+    return {
+      name: category?.name || 'Non classé',
+      value: item._sum.amount || 0,
+      color: category?.color || undefined
+    };
+  }).sort((a, b) => b.value - a.value);
+
+  // Activité récente fusionnée
+  const recentActivity = [
+    ...incomes.map(i => ({ 
+      id: i.id,
+      name: i.name,
+      amount: i.amount,
+      date: i.date.toISOString(),
+      type: 'income' as const 
+    })),
+    ...expenses.map(e => ({ 
+      id: e.id,
+      name: e.name,
+      amount: e.amount,
+      date: e.date.toISOString(),
+      type: 'expense' as const 
+    }))
+  ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+   .slice(0, 5);
+
+  // Formater les objectifs
+  const formattedGoals = goals.map(g => ({
+    id: g.id,
+    name: g.name,
+    targetAmount: g.targetAmount,
+    currentAmount: g.currentAmount,
+    deadline: g.deadline?.toISOString() || null,
+    isCompleted: g.isCompleted,
+  }));
+
+  // Formater les abonnements
+  const formattedSubscriptions = subscriptions.map(s => ({
+    id: s.id,
+    name: s.name,
+    amount: s.amount,
+    frequency: s.frequency,
+    billingDate: s.billingDate,
+    isActive: s.isActive,
+  }));
+
+  // Préparer les données pour le client
+  const dashboardData = {
+    balance,
+    totalIncome,
+    totalExpenseReal,
+    projectedBalance,
+    pendingSubscriptionCost,
+    totalSubscriptionCost,
+    chartData,
+    pieData,
+    recentActivity,
+    goals: formattedGoals,
+    subscriptions: formattedSubscriptions,
+  };
+
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white shadow">
-        <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
-          <div>
-            <h1 className="text-2xl font-bold text-blue-600">Budget AI</h1>
-            <p className="text-sm text-gray-600">Dashboard</p>
-          </div>
-          <a
-            href="/login"
-            className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
-          >
-            Déconnexion
-          </a>
-        </div>
-      </header>
-
-      {/* Main Content */}
-      <div className="max-w-7xl mx-auto p-8">
-        <div className="bg-green-100 border border-green-500 text-green-800 px-6 py-4 rounded-lg mb-8">
-          <h2 className="text-2xl font-bold mb-2">🎉 Connexion réussie !</h2>
-          <p>Vous êtes bien connecté à Budget AI.</p>
-          <p className="text-sm mt-2">Email : test@gmail.com</p>
-        </div>
-        
-        <h2 className="text-3xl font-bold mb-8">Dashboard</h2>
-        
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4 mb-8">
-          <div className="bg-white p-6 rounded-lg shadow">
-            <h3 className="text-sm font-medium text-gray-600 mb-2">Solde</h3>
-            <p className="text-2xl font-bold text-green-600">0,00 €</p>
-            <p className="text-xs text-gray-500 mt-1">Aucune transaction</p>
-          </div>
-
-          <div className="bg-white p-6 rounded-lg shadow">
-            <h3 className="text-sm font-medium text-gray-600 mb-2">Revenus</h3>
-            <p className="text-2xl font-bold text-green-600">0,00 €</p>
-            <p className="text-xs text-gray-500 mt-1">0 revenus ce mois</p>
-          </div>
-
-          <div className="bg-white p-6 rounded-lg shadow">
-            <h3 className="text-sm font-medium text-gray-600 mb-2">Dépenses</h3>
-            <p className="text-2xl font-bold text-red-600">0,00 €</p>
-            <p className="text-xs text-gray-500 mt-1">0 dépenses ce mois</p>
-          </div>
-
-          <div className="bg-white p-6 rounded-lg shadow">
-            <h3 className="text-sm font-medium text-gray-600 mb-2">Abonnements</h3>
-            <p className="text-2xl font-bold text-blue-600">0,00 €</p>
-            <p className="text-xs text-gray-500 mt-1">0 abonnements actifs</p>
-          </div>
-        </div>
-
-        <div className="grid gap-6 md:grid-cols-3 mb-8">
-          <a href="/dashboard/incomes" className="bg-white p-6 rounded-lg shadow hover:shadow-lg transition-shadow">
-            <h3 className="text-lg font-bold mb-2">💰 Ajouter un revenu</h3>
-            <p className="text-sm text-gray-600">Enregistrez vos entrées d'argent</p>
-          </a>
-
-          <a href="/dashboard/expenses" className="bg-white p-6 rounded-lg shadow hover:shadow-lg transition-shadow">
-            <h3 className="text-lg font-bold mb-2">💳 Ajouter une dépense</h3>
-            <p className="text-sm text-gray-600">Suivez vos dépenses quotidiennes</p>
-          </a>
-
-          <a href="/dashboard/subscriptions" className="bg-white p-6 rounded-lg shadow hover:shadow-lg transition-shadow">
-            <h3 className="text-lg font-bold mb-2">🔄 Ajouter un abonnement</h3>
-            <p className="text-sm text-gray-600">Centralisez tous vos abonnements</p>
-          </a>
-        </div>
-
-        <div className="bg-white p-6 rounded-lg shadow">
-          <h2 className="text-xl font-bold mb-4">🎉 Bienvenue sur Budget AI !</h2>
-          <p className="text-gray-600 mb-4">
-            Votre connexion a fonctionné ! Commencez par ajouter vos premières données :
-          </p>
-          <ul className="list-disc list-inside text-gray-600 space-y-2">
-            <li>Ajoutez vos revenus mensuels (salaire, freelance, etc.)</li>
-            <li>Enregistrez vos dépenses quotidiennes</li>
-            <li>Centralisez tous vos abonnements (Netflix, Spotify, etc.)</li>
-          </ul>
-        </div>
-      </div>
-    </div>
+    <DashboardClient 
+      data={dashboardData} 
+      initialPreferences={DEFAULT_PREFERENCES} 
+    />
   );
 }
