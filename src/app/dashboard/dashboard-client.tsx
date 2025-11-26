@@ -7,6 +7,7 @@ import { SpendingPieChart } from "@/components/charts/spending-pie";
 import { BalanceEvolution } from "@/components/charts/balance-evolution";
 import { WidgetGoals } from "@/components/dashboard/widget-goals";
 import { WidgetSubscriptions } from "@/components/dashboard/widget-subscriptions";
+import { WidgetAccounts } from "@/components/dashboard/widget-accounts";
 import { WidgetSettings, WidgetPreferences } from "@/components/dashboard/widget-settings";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -71,6 +72,15 @@ interface DashboardClientProps {
       billingDate: number;
       isActive: boolean;
     }>;
+    accounts: Array<{
+      id: string;
+      name: string;
+      type: string;
+      bank: string | null;
+      currentBalance: number;
+      color: string | null;
+      isDefault: boolean;
+    }>;
   };
   initialPreferences: WidgetPreferences;
 }
@@ -123,6 +133,7 @@ export function DashboardClient({ data, initialPreferences }: DashboardClientPro
     recurringIncomes,
     goals,
     subscriptions,
+    accounts,
   } = data;
 
   return (
@@ -282,6 +293,9 @@ export function DashboardClient({ data, initialPreferences }: DashboardClientPro
 
             {/* Widget Abonnements */}
             {preferences.subscriptions && <WidgetSubscriptions subscriptions={subscriptions} />}
+
+            {/* Widget Comptes bancaires */}
+            {preferences.accounts && <WidgetAccounts accounts={accounts} />}
 
             {/* Carte Conseil */}
             {preferences.advice && (

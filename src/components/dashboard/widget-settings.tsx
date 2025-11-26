@@ -21,6 +21,7 @@ export interface WidgetPreferences {
   pie: boolean;
   goals: boolean;
   subscriptions: boolean;
+  accounts: boolean;
   activity: boolean;
   advice: boolean;
 }
@@ -38,6 +39,7 @@ const WIDGET_LABELS: Record<keyof WidgetPreferences, { label: string; descriptio
   pie: { label: "Répartition dépenses", description: "Camembert par catégorie" },
   goals: { label: "Objectifs financiers", description: "Progression de vos objectifs" },
   subscriptions: { label: "Abonnements", description: "Prochains prélèvements" },
+  accounts: { label: "Comptes bancaires", description: "Solde de vos différents comptes" },
   activity: { label: "Activité récente", description: "Dernières transactions" },
   advice: { label: "Conseils", description: "Analyse et recommandations" },
 };

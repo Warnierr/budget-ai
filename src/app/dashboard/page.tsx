@@ -16,6 +16,7 @@ const DEFAULT_PREFERENCES = {
   pie: true,
   goals: true,
   subscriptions: true,
+  accounts: true,
   activity: true,
   advice: true,
 };
@@ -46,6 +47,8 @@ export default async function DashboardPage() {
     subscriptions,
     // Objectifs
     goals,
+    // Comptes bancaires
+    bankAccounts,
     // Groupement par catégorie (mois courant)
     expensesByCategory,
     // Catégories
@@ -73,6 +76,11 @@ export default async function DashboardPage() {
     prisma.goal.findMany({
       where: { userId: session.user.id },
       orderBy: { createdAt: 'desc' }
+    }),
+    // Comptes bancaires
+    prisma.bankAccount.findMany({
+      where: { userId: session.user.id, isActive: true },
+      orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }]
     }),
     // Groupement par catégorie
     prisma.expense.groupBy({
@@ -193,6 +201,37 @@ export default async function DashboardPage() {
     isActive: s.isActive,
   }));
 
+  // Formater les comptes bancaires avec soldes calculés
+  const formattedAccounts = await Promise.all(
+    bankAccounts.map(async (account) => {
+      const [incomeSum, expenseSum] = await Promise.all([
+        prisma.income.aggregate({
+          where: { bankAccountId: account.id },
+          _sum: { amount: true }
+        }),
+        prisma.expense.aggregate({
+          where: { bankAccountId: account.id },
+          _sum: { amount: true }
+        })
+      ]);
+
+      const currentBalance = 
+        account.initialBalance + 
+        (incomeSum._sum.amount || 0) - 
+        (expenseSum._sum.amount || 0);
+
+      return {
+        id: account.id,
+        name: account.name,
+        type: account.type,
+        bank: account.bank,
+        currentBalance,
+        color: account.color,
+        isDefault: account.isDefault,
+      };
+    })
+  );
+
   // Préparer les données pour le client
   const dashboardData = {
     balance,
@@ -207,6 +246,7 @@ export default async function DashboardPage() {
     recurringIncomes,
     goals: formattedGoals,
     subscriptions: formattedSubscriptions,
+    accounts: formattedAccounts,
   };
 
   return (

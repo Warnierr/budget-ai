@@ -29,6 +29,7 @@ model User {
   // Relations
   accounts      Account[]
   sessions      Session[]
+  bankAccounts  BankAccount[]
   incomes       Income[]
   expenses      Expense[]
   subscriptions Subscription[]
@@ -76,11 +77,47 @@ model VerificationToken {
   @@unique([identifier, token])
 }
 
+// COMPTES BANCAIRES
+model BankAccount {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name        String   // "Compte principal", "Revolut", "N26", etc.
+  type        String   @default("checking") // "checking", "savings", "investment", "crypto"
+  bank        String?  // "Société Générale", "Revolut", "N26", "Boursorama", etc.
+  
+  // Solde initial (pour calculer le solde actuel)
+  initialBalance Float @default(0)
+  
+  // Personnalisation
+  color       String?  // Couleur pour l'affichage
+  icon        String?  // Icône (emoji ou nom lucide)
+  
+  // Statut
+  isActive    Boolean  @default(true)
+  isDefault   Boolean  @default(false) // Compte par défaut pour les nouvelles transactions
+  
+  // Relations
+  incomes     Income[]
+  expenses    Expense[]
+  subscriptions Subscription[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+}
+
 // REVENUS
 model Income {
   id          String   @id @default(cuid())
   userId      String
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Compte bancaire associé (optionnel pour rétrocompatibilité)
+  bankAccountId String?
+  bankAccount   BankAccount? @relation(fields: [bankAccountId], references: [id])
 
   name        String // "Salaire", "Freelance", etc.
   amount      Float
@@ -94,6 +131,7 @@ model Income {
   updatedAt DateTime @updatedAt
 
   @@index([userId])
+  @@index([bankAccountId])
   @@index([date])
 }
 
@@ -105,6 +143,10 @@ model Expense {
 
   categoryId String?
   category   Category? @relation(fields: [categoryId], references: [id])
+
+  // Compte bancaire associé (optionnel pour rétrocompatibilité)
+  bankAccountId String?
+  bankAccount   BankAccount? @relation(fields: [bankAccountId], references: [id])
 
   name        String
   amount      Float
@@ -122,6 +164,7 @@ model Expense {
 
   @@index([userId])
   @@index([categoryId])
+  @@index([bankAccountId])
   @@index([date])
 }
 
@@ -133,6 +176,10 @@ model Subscription {
 
   categoryId String?
   category   Category? @relation(fields: [categoryId], references: [id])
+
+  // Compte bancaire associé (optionnel pour rétrocompatibilité)
+  bankAccountId String?
+  bankAccount   BankAccount? @relation(fields: [bankAccountId], references: [id])
 
   name        String // "YouTube Premium", "Revolut", etc.
   amount      Float
@@ -150,6 +197,7 @@ model Subscription {
   updatedAt DateTime @updatedAt
 
   @@index([userId])
+  @@index([bankAccountId])
 }
 
 // CATÉGORIES
