@@ -56,6 +56,24 @@ export interface RawFinancialData {
     currentAmount: number;
     deadline?: string;
   }>;
+  summary?: {
+    monthLabel: string;
+    currentMonthIncome: number;
+    currentMonthExpenses: number;
+    fixedCharges: number;
+    freeToSpend: number;
+  };
+  upcomingIncomes?: Array<{
+    amount: number;
+    date: string;
+    category?: string;
+    isRecurring?: boolean;
+  }>;
+  upcomingExpenses?: Array<{
+    amount: number;
+    date: string;
+    category?: string;
+  }>;
 }
 
 // Données anonymisées envoyées à l'IA
@@ -65,6 +83,11 @@ export interface AnonymizedFinancialData {
   monthlyIncome: number;
   monthlyExpenses: number;
   savingsRate: number;
+  summary?: {
+    monthLabel: string;
+    fixedCharges: number;
+    freeToSpend: number;
+  };
   
   // Répartition par type de compte (sans noms)
   accountTypes: Array<{
@@ -92,6 +115,16 @@ export interface AnonymizedFinancialData {
     category: string;       // "Streaming", "Télécom", "Logiciels"
     count: number;
     monthlyTotal: number;
+  }>;
+  upcomingIncomes: Array<{
+    amount: number;
+    date: string;
+    category: string;
+  }>;
+  upcomingExpenses: Array<{
+    amount: number;
+    date: string;
+    category: string;
   }>;
   
   // Objectifs (anonymisés)
@@ -183,11 +216,18 @@ export function anonymizeFinancialData(
 ): AnonymizedFinancialData {
   // Calculs de base
   const totalBalance = rawData.accounts.reduce((sum, a) => sum + a.balance, 0);
-  const monthlyIncome = rawData.incomes.reduce((sum, i) => sum + i.amount, 0);
-  const monthlyExpenses = rawData.expenses.reduce((sum, e) => sum + e.amount, 0);
+  const monthlyIncome = rawData.summary?.currentMonthIncome ?? rawData.incomes.reduce((sum, i) => sum + i.amount, 0);
+  const monthlyExpenses = rawData.summary?.currentMonthExpenses ?? rawData.expenses.reduce((sum, e) => sum + e.amount, 0);
   const savingsRate = monthlyIncome > 0 
     ? Math.round(((monthlyIncome - monthlyExpenses) / monthlyIncome) * 100) 
     : 0;
+  const summaryInfo = rawData.summary
+    ? {
+        monthLabel: rawData.summary.monthLabel,
+        fixedCharges: rawData.summary.fixedCharges,
+        freeToSpend: rawData.summary.freeToSpend,
+      }
+    : undefined;
 
   // Niveau MINIMAL - Uniquement les totaux
   if (privacyLevel === PrivacyLevel.MINIMAL) {
@@ -196,10 +236,13 @@ export function anonymizeFinancialData(
       monthlyIncome,
       monthlyExpenses,
       savingsRate,
+      summary: summaryInfo,
       accountTypes: [],
       expensesByCategory: [],
       incomesByType: [],
       subscriptionsByCategory: [],
+      upcomingIncomes: [],
+      upcomingExpenses: [],
       goals: [],
       trends: {
         incomeChange: 0,
@@ -275,12 +318,23 @@ export function anonymizeFinancialData(
     monthlyIncome,
     monthlyExpenses,
     savingsRate,
+    summary: summaryInfo,
     accountTypes,
     expensesByCategory: privacyLevel === PrivacyLevel.DETAILED 
       ? expensesByCategory 
       : expensesByCategory.slice(0, 5), // Top 5 seulement en mode standard
     incomesByType,
     subscriptionsByCategory,
+    upcomingIncomes: (rawData.upcomingIncomes || []).map(income => ({
+      amount: income.amount,
+      date: income.date,
+      category: income.category || 'Revenu planifié',
+    })),
+    upcomingExpenses: (rawData.upcomingExpenses || []).map(expense => ({
+      amount: expense.amount,
+      date: expense.date,
+      category: expense.category || 'Dépense planifiée',
+    })),
     goals,
     trends: {
       incomeChange: 0, // TODO: Calculer avec l'historique
@@ -331,11 +385,19 @@ export function generateAnonymizedPrompt(data: AnonymizedFinancialData): string 
 📊 SITUATION FINANCIÈRE ANONYMISÉE:
 
 💰 Vue d'ensemble:
-- Patrimoine total: ${formatCurrency(data.totalBalance)}
+- Patrimoine disponible (encaissé aujourd'hui): ${formatCurrency(data.totalBalance)}
 - Revenus mensuels: ${formatCurrency(data.monthlyIncome)}
 - Dépenses mensuelles: ${formatCurrency(data.monthlyExpenses)}
 - Taux d'épargne: ${data.savingsRate}%
 `;
+
+  if (data.summary) {
+    prompt += `
+🧾 Résumé ${data.summary.monthLabel}:
+- Charges fixes: ${formatCurrency(data.summary.fixedCharges)}
+- Reste à vivre estimé: ${formatCurrency(data.summary.freeToSpend)}
+`;
+  }
 
   if (data.accountTypes.length > 0) {
     prompt += `
@@ -359,6 +421,22 @@ ${data.subscriptionsByCategory.map(s => `- ${s.category}: ${s.count} abo(s), ${f
 `;
   }
 
+  if (data.upcomingIncomes.length > 0) {
+    prompt += `
+📆 Revenus confirmés à venir (top 5):
+${data.upcomingIncomes.slice(0, 5).map(item => `- ${item.category}: ${formatCurrency(item.amount)} le ${new Date(item.date).toLocaleDateString('fr-FR')}`).join('\n')}
+
+⚠️ Ces revenus ne sont pas encore encaissés : ne pas les additionner au patrimoine disponible.
+`;
+  }
+
+  if (data.upcomingExpenses.length > 0) {
+    prompt += `
+⚠️ Dépenses planifiées (top 5):
+${data.upcomingExpenses.slice(0, 5).map(item => `- ${item.category}: ${formatCurrency(item.amount)} le ${new Date(item.date).toLocaleDateString('fr-FR')}`).join('\n')}
+`;
+  }
+
   if (data.goals.length > 0) {
     prompt += `
 🎯 Objectifs financiers:
@@ -372,7 +450,6 @@ ${data.goals.map(g => `- ${g.category}: ${g.progressPercent}% atteint (${formatC
 
   return prompt;
 }
-
 /**
  * Préférences de confidentialité utilisateur
  */

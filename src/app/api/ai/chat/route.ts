@@ -27,7 +27,9 @@ export async function POST(req: NextRequest) {
       conversationHistory = [], 
       includeFinancialContext = true,
       privacyPreferences = DEFAULT_PRIVACY_PREFERENCES,
+      model,
     } = body;
+    const selectedModel = typeof model === 'string' ? model : undefined;
 
     if (!message || typeof message !== 'string') {
       return NextResponse.json({ error: 'Message requis' }, { status: 400 });
@@ -43,13 +45,15 @@ export async function POST(req: NextRequest) {
         rawData,
         conversationHistory as Message[],
         message,
-        privacyPreferences as PrivacyPreferences
+        privacyPreferences as PrivacyPreferences,
+        { model: selectedModel }
       );
     } else {
       // Chat sans contexte financier
       response = await chatWithAssistant(
         conversationHistory as Message[],
-        message
+        message,
+        { model: selectedModel }
       );
     }
 
@@ -91,8 +95,10 @@ export async function POST(req: NextRequest) {
  */
 async function getUserFinancialData(userId: string): Promise<RawFinancialData> {
   const now = new Date();
-  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-  const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  const today = new Date(now);
+  today.setHours(0, 0, 0, 0);
+  const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+  const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
 
   const [accounts, incomes, expenses, subscriptions, goals] = await Promise.all([
     // Comptes bancaires
@@ -104,11 +110,13 @@ async function getUserFinancialData(userId: string): Promise<RawFinancialData> {
         type: true,
         initialBalance: true,
         // Calculer le solde actuel
-        incomes: { select: { amount: true } },
-        expenses: { select: { amount: true } },
-        subscriptions: { 
-          where: { isActive: true },
-          select: { amount: true, frequency: true } 
+        incomes: { 
+          where: { date: { lte: today } },
+          select: { amount: true },
+        },
+        expenses: { 
+          where: { date: { lte: today } },
+          select: { amount: true },
         },
       }
     }),
@@ -169,24 +177,60 @@ async function getUserFinancialData(userId: string): Promise<RawFinancialData> {
     }),
   ]);
 
+  const realizedIncomes = incomes.filter((income) => income.date <= today);
+  const realizedExpenses = expenses.filter((expense) => expense.date <= today);
+
+  const totalIncome = realizedIncomes.reduce((sum, i) => sum + i.amount, 0);
+  const totalExpenses = realizedExpenses.reduce((sum, e) => sum + e.amount, 0);
+  const totalSubscriptions = subscriptions.reduce((sum, s) => {
+    return sum + (s.frequency === 'monthly' ? s.amount : s.amount / 12);
+  }, 0);
+  const monthLabel = now.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+  const freeToSpend = totalIncome - totalExpenses - totalSubscriptions;
+
+  const [futureIncomes, futureExpenses] = await Promise.all([
+    prisma.income.findMany({
+      where: { userId, date: { gt: now } },
+      orderBy: { date: 'asc' },
+      take: 8,
+      select: {
+        id: true,
+        name: true,
+        amount: true,
+        date: true,
+        frequency: true,
+        isRecurring: true,
+      },
+    }),
+    prisma.expense.findMany({
+      where: { userId, date: { gt: now } },
+      orderBy: { date: 'asc' },
+      take: 8,
+      select: {
+        id: true,
+        name: true,
+        amount: true,
+        date: true,
+        category: { select: { name: true } },
+      },
+    }),
+  ]);
+
   // Transformer les données au format RawFinancialData
   return {
     accounts: accounts.map(a => {
       const totalIncome = a.incomes.reduce((sum, i) => sum + i.amount, 0);
       const totalExpense = a.expenses.reduce((sum, e) => sum + e.amount, 0);
-      const totalSubs = a.subscriptions.reduce((sum, s) => {
-        return sum + (s.frequency === 'yearly' ? s.amount / 12 : s.amount);
-      }, 0);
       
       return {
         id: a.id,
         name: a.name,
         type: a.type,
-        balance: a.initialBalance + totalIncome - totalExpense - totalSubs,
+        balance: a.initialBalance + totalIncome - totalExpense,
       };
     }),
 
-    incomes: incomes.map(i => ({
+    incomes: realizedIncomes.map(i => ({
       id: i.id,
       name: i.name,
       amount: i.amount,
@@ -195,7 +239,7 @@ async function getUserFinancialData(userId: string): Promise<RawFinancialData> {
       isRecurring: i.isRecurring,
     })),
 
-    expenses: expenses.map(e => ({
+    expenses: realizedExpenses.map(e => ({
       id: e.id,
       name: e.name,
       amount: e.amount,
@@ -217,6 +261,24 @@ async function getUserFinancialData(userId: string): Promise<RawFinancialData> {
       targetAmount: g.targetAmount,
       currentAmount: g.currentAmount,
       deadline: g.deadline?.toISOString(),
+    })),
+    summary: {
+      monthLabel,
+      currentMonthIncome: totalIncome,
+      currentMonthExpenses: totalExpenses,
+      fixedCharges: totalSubscriptions,
+      freeToSpend,
+    },
+    upcomingIncomes: futureIncomes.map(i => ({
+      amount: i.amount,
+      date: i.date.toISOString(),
+      category: i.frequency === 'monthly' ? 'Revenu récurrent' : 'Revenu ponctuel',
+      isRecurring: i.isRecurring,
+    })),
+    upcomingExpenses: futureExpenses.map(e => ({
+      amount: e.amount,
+      date: e.date.toISOString(),
+      category: e.category?.name || 'Dépense planifiée',
     })),
   };
 }

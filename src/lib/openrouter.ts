@@ -5,7 +5,7 @@
 // pour anonymiser toutes les données avant envoi à l'IA externe.
 // Aucune donnée personnelle (noms, banques, détails) n'est transmise.
 
-import { 
+import {
   AnonymizedFinancialData, 
   RawFinancialData,
   PrivacyPreferences,
@@ -15,6 +15,7 @@ import {
   applyPrivacyPreferences,
   DEFAULT_PRIVACY_PREFERENCES,
 } from './ai-privacy';
+import { getOpenRouterApiKey } from './server-env';
 
 const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
@@ -30,6 +31,10 @@ export interface ChatCompletionOptions {
   max_tokens?: number;
   stream?: boolean;
 }
+
+export type ChatRequestOptions = Partial<
+  Pick<ChatCompletionOptions, 'model' | 'temperature' | 'max_tokens'>
+>;
 
 // Re-export pour faciliter l'utilisation
 export { 
@@ -72,6 +77,7 @@ Règles importantes:
 4. Réponds toujours en français
 5. Ne donne jamais de conseils d'investissement spécifiques (actions, crypto particulières)
 6. Rappelle que tu n'es pas un conseiller financier certifié pour les décisions importantes
+7. Distingue strictement le patrimoine réellement disponible (soldes encaissés aujourd'hui) des revenus futurs. Ne les additionne jamais et rappelle qu'ils restent conditionnels tant qu'ils ne sont pas encaissés
 
 Format de réponse:
 - Utilise des listes à puces pour les conseils
@@ -101,11 +107,7 @@ export function prepareSecureFinancialContext(
 
 // Appeler l'API OpenRouter
 export async function chatCompletion(options: ChatCompletionOptions): Promise<string> {
-  const apiKey = process.env.OPENROUTER_API_KEY?.trim();
-  
-  if (!apiKey) {
-    throw new Error('OPENROUTER_API_KEY is not configured. Please add it to your .env.local file.');
-  }
+  const apiKey = getOpenRouterApiKey();
 
   const response = await fetch(OPENROUTER_API_URL, {
     method: 'POST',
@@ -125,8 +127,10 @@ export async function chatCompletion(options: ChatCompletionOptions): Promise<st
   });
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(`OpenRouter API error: ${error.error?.message || response.statusText}`);
+    // Log raw response to understand OpenRouter errors (debug only)
+    const rawError = await response.text().catch(() => '');
+    console.error('OpenRouter chatCompletion error raw response:', rawError);
+    throw new Error(`OpenRouter API error: ${rawError || response.statusText}`);
   }
 
   const data = await response.json();
@@ -135,11 +139,7 @@ export async function chatCompletion(options: ChatCompletionOptions): Promise<st
 
 // Stream la réponse de l'IA
 export async function* streamChatCompletion(options: ChatCompletionOptions): AsyncGenerator<string> {
-  const apiKey = process.env.OPENROUTER_API_KEY?.trim();
-  
-  if (!apiKey) {
-    throw new Error('OPENROUTER_API_KEY is not configured. Please add it to your .env.local file.');
-  }
+  const apiKey = getOpenRouterApiKey();
 
   const response = await fetch(OPENROUTER_API_URL, {
     method: 'POST',
@@ -159,8 +159,9 @@ export async function* streamChatCompletion(options: ChatCompletionOptions): Asy
   });
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(`OpenRouter API error: ${error.error?.message || response.statusText}`);
+    const rawError = await response.text().catch(() => '');
+    console.error('OpenRouter streamChatCompletion error raw response:', rawError);
+    throw new Error(`OpenRouter API error: ${rawError || response.statusText}`);
   }
 
   const reader = response.body?.getReader();
@@ -309,7 +310,8 @@ Crée-moi un plan d'épargne personnalisé avec:
  */
 export async function chatWithAssistant(
   conversationHistory: Message[],
-  newMessage: string
+  newMessage: string,
+  options?: ChatRequestOptions
 ): Promise<string> {
   const messages: Message[] = [
     { role: 'system', content: FINANCIAL_ASSISTANT_PROMPT },
@@ -317,7 +319,7 @@ export async function chatWithAssistant(
     { role: 'user', content: newMessage }
   ];
 
-  return chatCompletion({ messages });
+  return chatCompletion({ messages, ...options });
 }
 
 /**
@@ -327,7 +329,8 @@ export async function chatWithFinancialContext(
   rawData: RawFinancialData,
   conversationHistory: Message[],
   newMessage: string,
-  privacyPrefs?: PrivacyPreferences
+  privacyPrefs?: PrivacyPreferences,
+  options?: ChatRequestOptions
 ): Promise<string> {
   const secureContext = prepareSecureFinancialContext(rawData, privacyPrefs);
   
@@ -342,6 +345,5 @@ ${secureContext}`;
     { role: 'user', content: newMessage }
   ];
 
-  return chatCompletion({ messages });
+  return chatCompletion({ messages, ...options });
 }
-
