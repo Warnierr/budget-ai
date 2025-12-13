@@ -3,11 +3,14 @@
 import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { formatCurrency } from "@/lib/utils";
+import { getSubscriptionChargeForDate, shouldTriggerRecurringIncome } from "@/lib/projections";
 import { SpendingPieChart } from "@/components/charts/spending-pie";
 import { BalanceEvolution } from "@/components/charts/balance-evolution";
+import { BalanceHeatmap } from "@/components/charts/balance-heatmap";
 import { WidgetGoals } from "@/components/dashboard/widget-goals";
 import { WidgetSubscriptions } from "@/components/dashboard/widget-subscriptions";
 import { WidgetAccounts } from "@/components/dashboard/widget-accounts";
+import { WidgetActivity } from "@/components/dashboard/widget-activity";
 import { WidgetSettings, WidgetPreferences } from "@/components/dashboard/widget-settings";
 import { AccountSelector, AccountTypeInfo } from "@/components/dashboard/account-selector";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,11 +19,8 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   Wallet,
-  CalendarRange,
-  ArrowRight,
   AlertCircle,
   Sparkles,
-  Plus,
   PiggyBank,
   TrendingUp as TrendingUpIcon,
   Coins
@@ -38,7 +38,7 @@ interface DashboardClientProps {
     projectedBalance: number;
     pendingSubscriptionCost: number;
     totalSubscriptionCost: number;
-    pieData: Array<{ name: string; value: number; color?: string }>;
+    pieData: Array<{ name: string; value: number; color: string }>;
     recentActivity: Array<{
       id: string;
       name: string;
@@ -61,6 +61,7 @@ interface DashboardClientProps {
       amount: number;
       frequency: string;
       isRecurring: boolean;
+      startDate: string;
     }>;
     goals: Array<{
       id: string;
@@ -128,12 +129,29 @@ export function DashboardClient({ data, initialPreferences }: DashboardClientPro
 
   // Filtrer les données selon le compte sélectionné
   const filteredData = useMemo(() => {
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+
+    const isWithinCurrentMonth = (dateStr: string) => {
+      const date = new Date(dateStr);
+      return date >= monthStart && date <= monthEnd;
+    };
+
+    const isPastOrToday = (dateStr: string) => {
+      const date = new Date(dateStr);
+      return date <= now;
+    };
+
+    const aggregatedBalance = data.accounts.reduce((sum, account) => sum + account.currentBalance, 0);
+
     if (!selectedAccountId) {
       // Tous les comptes - données originales
       return {
         transactions: data.allTransactions,
         subscriptions: data.subscriptions,
-        balance: data.balance,
+        balance: aggregatedBalance,
         totalIncome: data.totalIncome,
         totalExpenseReal: data.totalExpenseReal,
       };
@@ -148,8 +166,12 @@ export function DashboardClient({ data, initialPreferences }: DashboardClientPro
     );
 
     // Recalculer les totaux pour ce compte
-    const accountIncomes = accountTransactions.filter(t => t.type === 'income');
-    const accountExpenses = accountTransactions.filter(t => t.type === 'expense');
+    const currentMonthTransactions = accountTransactions.filter(
+      t => isWithinCurrentMonth(t.date) && isPastOrToday(t.date)
+    );
+
+    const accountIncomes = currentMonthTransactions.filter(t => t.type === 'income');
+    const accountExpenses = currentMonthTransactions.filter(t => t.type === 'expense');
     
     const totalIncome = accountIncomes.reduce((sum, t) => sum + t.amount, 0);
     const totalExpense = accountExpenses.reduce((sum, t) => sum + t.amount, 0);
@@ -197,6 +219,22 @@ export function DashboardClient({ data, initialPreferences }: DashboardClientPro
     accounts,
   } = data;
 
+  const normalizedRecurringIncomes: Array<{
+    id: string;
+    name: string;
+    amount: number;
+    frequency: string;
+    isRecurring: boolean;
+    startDate: string;
+  }> = (recurringIncomes || []).map((income) => ({
+    ...income,
+    startDate: income.startDate || new Date().toISOString(),
+  }));
+
+  const pieChartData: Array<{ name: string; value: number; color: string }> = pieData.map(
+    (item) => ({ ...item, color: item.color || "#94a3b8" })
+  );
+
   // Obtenir les conseils adaptés au type de compte
   const getAccountAdvice = () => {
     if (!selectedAccount) {
@@ -229,6 +267,137 @@ export function DashboardClient({ data, initialPreferences }: DashboardClientPro
   };
 
   const accountAdvice = getAccountAdvice();
+
+  const heatmapRange = useMemo(() => {
+    const hasTransactions = filteredData.transactions && filteredData.transactions.length > 0;
+    const hasProjectionSources =
+      (normalizedRecurringIncomes?.length ?? 0) > 0 ||
+      ((filteredData.subscriptions?.length ?? 0) > 0);
+
+    if (!hasTransactions && !hasProjectionSources) {
+      return null;
+    }
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const end = new Date(today);
+    const start = new Date(end);
+    start.setMonth(start.getMonth() - 3);
+    start.setDate(1);
+
+    const projectionEnd = new Date(end);
+    projectionEnd.setMonth(projectionEnd.getMonth() + 3); // ≈3 mois
+
+    type DayStat = { incomes: number; expenses: number; net: number };
+    const historicalMap = new Map<string, DayStat>();
+    const futureMap = new Map<string, { incomes: number; expenses: number }>();
+
+    filteredData.transactions?.forEach((transaction) => {
+      const txDate = new Date(transaction.date);
+      txDate.setHours(0, 0, 0, 0);
+      if (txDate < start || txDate > projectionEnd) {
+        return;
+      }
+      const key = txDate.toISOString().split("T")[0];
+      const isFuture = txDate > end;
+
+      if (isFuture) {
+        const entry = futureMap.get(key) || { incomes: 0, expenses: 0 };
+        if (transaction.type === "income") {
+          entry.incomes += transaction.amount;
+        } else {
+          entry.expenses += transaction.amount;
+        }
+        futureMap.set(key, entry);
+      } else {
+        const entry = historicalMap.get(key) || { incomes: 0, expenses: 0, net: 0 };
+        if (transaction.type === "income") {
+          entry.incomes += transaction.amount;
+          entry.net += transaction.amount;
+        } else {
+          entry.expenses += transaction.amount;
+          entry.net -= transaction.amount;
+        }
+        historicalMap.set(key, entry);
+      }
+    });
+
+    const points: {
+      date: string;
+      value: number;
+      isProjection: boolean;
+      revenues: number;
+      expenses: number;
+      subscriptions: number;
+    }[] = [];
+
+    const projectionSummary = {
+      revenues: 0,
+      subscriptions: 0,
+      plannedExpenses: 0,
+      net: 0,
+    };
+
+    for (
+      let cursor = new Date(start);
+      cursor <= projectionEnd;
+      cursor.setDate(cursor.getDate() + 1)
+    ) {
+      const key = cursor.toISOString().split("T")[0];
+      const isProjection = cursor > end;
+      let dayRevenues = 0;
+      let dayExpenses = 0;
+      let daySubscriptions = 0;
+      let value = 0;
+
+      if (isProjection) {
+        const futureTx = futureMap.get(key);
+        if (futureTx) {
+          dayRevenues += futureTx.incomes;
+          dayExpenses += futureTx.expenses;
+        }
+
+        (normalizedRecurringIncomes || []).forEach((income) => {
+          if (income.isRecurring && shouldTriggerRecurringIncome(income, cursor, today)) {
+            dayRevenues += income.amount;
+          }
+        });
+
+        (filteredData.subscriptions || []).forEach((subscription) => {
+          daySubscriptions += getSubscriptionChargeForDate(subscription, cursor);
+        });
+
+        value = dayRevenues - dayExpenses - daySubscriptions;
+
+        projectionSummary.revenues += dayRevenues;
+        projectionSummary.plannedExpenses += dayExpenses;
+        projectionSummary.subscriptions += daySubscriptions;
+        projectionSummary.net += value;
+      } else {
+        const hist = historicalMap.get(key);
+        if (hist) {
+          dayRevenues = hist.incomes;
+          dayExpenses = hist.expenses;
+          value = hist.net;
+        }
+      }
+
+      points.push({
+        date: key,
+        value,
+        isProjection,
+        revenues: dayRevenues,
+        expenses: dayExpenses,
+        subscriptions: daySubscriptions,
+      });
+    }
+
+    return { points, start, end, projectionEnd, projectionSummary };
+  }, [
+    filteredData.transactions,
+    filteredData.subscriptions,
+    normalizedRecurringIncomes,
+  ]);
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
@@ -436,8 +605,19 @@ export function DashboardClient({ data, initialPreferences }: DashboardClientPro
             <BalanceEvolution
               transactions={filteredData.transactions}
               subscriptions={filteredData.subscriptions}
-              recurringIncomes={recurringIncomes}
+              recurringIncomes={normalizedRecurringIncomes}
               currentBalance={filteredData.balance}
+            />
+          )}
+
+          {/* Heatmap quotidienne */}
+          {preferences.heatmap && heatmapRange && (
+            <BalanceHeatmap
+              data={heatmapRange.points}
+              startDate={heatmapRange.start}
+              endDate={heatmapRange.end}
+              projectionEndDate={heatmapRange.projectionEnd}
+              projectionSummary={heatmapRange.projectionSummary}
             />
           )}
 
@@ -450,7 +630,7 @@ export function DashboardClient({ data, initialPreferences }: DashboardClientPro
                   <CardTitle className="text-lg">Répartition dépenses</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <SpendingPieChart data={pieData} />
+                  <SpendingPieChart data={pieChartData} />
                 </CardContent>
               </Card>
             )}
@@ -539,65 +719,10 @@ export function DashboardClient({ data, initialPreferences }: DashboardClientPro
         {/* Sidebar: Activité */}
         {preferences.activity && (
           <div className="md:col-span-2 space-y-6">
-            <Card className="shadow-sm border-slate-100 h-full">
-              <CardHeader>
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <CalendarRange className="h-5 w-5 text-gray-500" />
-                  Derniers mouvements
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="px-4">
-                <div className="space-y-6">
-                  {recentActivity.length === 0 ? (
-                    <p className="text-sm text-gray-500 text-center py-4">Aucune activité.</p>
-                  ) : (
-                    recentActivity.map((item) => (
-                      <div key={item.id} className="flex items-center justify-between">
-                        <div className="flex items-center gap-3 overflow-hidden">
-                          <div
-                            className={`
-                            min-w-8 w-8 h-8 rounded-full flex items-center justify-center
-                            ${item.type === "income" ? "bg-green-50 text-green-600" : "bg-red-50 text-red-600"}
-                          `}
-                          >
-                            {item.type === "income" ? (
-                              <Plus className="h-4 w-4" />
-                            ) : (
-                              <ArrowDownRight className="h-4 w-4" />
-                            )}
-                          </div>
-                          <div className="truncate">
-                            <p className="text-sm font-medium text-gray-900 truncate">{item.name}</p>
-                            <p className="text-xs text-gray-500">
-                              {new Date(item.date).toLocaleDateString("fr-FR", {
-                                day: "numeric",
-                                month: "short",
-                              })}
-                            </p>
-                          </div>
-                        </div>
-                        <div
-                          className={`text-sm font-bold whitespace-nowrap ${
-                            item.type === "income" ? "text-green-600" : "text-gray-900"
-                          }`}
-                        >
-                          {item.type === "income" ? "+" : "-"}
-                          {formatCurrency(Number(item.amount))}
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-                <div className="mt-6 pt-4 border-t text-center">
-                  <Link
-                    href="/dashboard/expenses"
-                    className="text-xs text-gray-500 hover:text-blue-600 flex items-center justify-center gap-1"
-                  >
-                    Tout voir <ArrowRight className="h-3 w-3" />
-                  </Link>
-                </div>
-              </CardContent>
-            </Card>
+            <WidgetActivity
+              activities={recentActivity}
+              accountLabel={selectedAccount ? selectedAccount.name : undefined}
+            />
           </div>
         )}
       </div>

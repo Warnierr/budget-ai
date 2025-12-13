@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Target, Trophy } from "lucide-react";
+import { MoreHorizontal, Pencil, Plus, Target, Trash, Trophy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
@@ -19,6 +19,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/components/ui/use-toast";
 import { formatCurrency, calculatePercentage } from "@/lib/utils";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 type Goal = {
   id: string;
@@ -33,9 +39,20 @@ export function GoalsClient({ initialGoals }: { initialGoals: Goal[] }) {
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [editLoading, setEditLoading] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [selectedGoal, setSelectedGoal] = useState<Goal | null>(null);
   
   // État du formulaire
   const [formData, setFormData] = useState({
+    name: "",
+    targetAmount: "",
+    currentAmount: "",
+    deadline: "",
+  });
+  const [editFormData, setEditFormData] = useState({
     name: "",
     targetAmount: "",
     currentAmount: "",
@@ -79,13 +96,97 @@ export function GoalsClient({ initialGoals }: { initialGoals: Goal[] }) {
     }
   };
 
+  const openEditDialog = (goal: Goal) => {
+    setSelectedGoal(goal);
+    setEditFormData({
+      name: goal.name,
+      targetAmount: goal.targetAmount.toString(),
+      currentAmount: goal.currentAmount.toString(),
+      deadline: goal.deadline ? new Date(goal.deadline).toISOString().split("T")[0] : "",
+    });
+    setEditOpen(true);
+  };
+
+  const handleEditSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedGoal) return;
+    setEditLoading(true);
+
+    try {
+      const res = await fetch(`/api/goals/${selectedGoal.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: editFormData.name,
+          targetAmount: parseFloat(editFormData.targetAmount),
+          currentAmount: parseFloat(editFormData.currentAmount || "0"),
+          deadline: editFormData.deadline || null,
+        }),
+      });
+
+      if (!res.ok) throw new Error("Erreur lors de la mise à jour");
+
+      toast({
+        title: "Objectif mis à jour",
+        description: "Les informations de l'objectif ont été enregistrées.",
+      });
+
+      setEditOpen(false);
+      setSelectedGoal(null);
+      router.refresh();
+    } catch (error) {
+      toast({
+        title: "Erreur",
+        description: "Impossible de mettre à jour l'objectif.",
+        variant: "destructive",
+      });
+    } finally {
+      setEditLoading(false);
+    }
+  };
+
+  const openDeleteDialog = (goal: Goal) => {
+    setSelectedGoal(goal);
+    setDeleteOpen(true);
+  };
+
+  const handleDelete = async () => {
+    if (!selectedGoal) return;
+    setDeleteLoading(true);
+
+    try {
+      const res = await fetch(`/api/goals/${selectedGoal.id}`, {
+        method: "DELETE",
+      });
+
+      if (!res.ok) throw new Error("Erreur lors de la suppression");
+
+      toast({
+        title: "Objectif supprimé",
+        description: "L'objectif a été retiré de votre liste.",
+      });
+
+      setDeleteOpen(false);
+      setSelectedGoal(null);
+      router.refresh();
+    } catch (error) {
+      toast({
+        title: "Erreur",
+        description: "Impossible de supprimer l'objectif.",
+        variant: "destructive",
+      });
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-3xl font-bold tracking-tight">Objectifs Financiers</h2>
           <p className="text-muted-foreground">
-            Définissez et suivez vos projets d'épargne.
+            {`Définissez et suivez vos projets d'épargne.`}
           </p>
         </div>
         <Dialog open={open} onOpenChange={setOpen}>
@@ -168,7 +269,7 @@ export function GoalsClient({ initialGoals }: { initialGoals: Goal[] }) {
             <div>
               <h3 className="text-lg font-medium">Aucun objectif défini</h3>
               <p className="text-sm text-gray-500 max-w-sm">
-                Commencez par définir un objectif d'épargne pour visualiser votre progression.
+                {`Commencez par définir un objectif d'épargne pour visualiser votre progression.`}
               </p>
             </div>
           </CardContent>
@@ -183,8 +284,27 @@ export function GoalsClient({ initialGoals }: { initialGoals: Goal[] }) {
               <Card key={goal.id} className={isCompleted ? "border-green-200 bg-green-50" : ""}>
                 <CardHeader className="pb-2">
                   <div className="flex justify-between items-start">
-                    <CardTitle className="text-lg font-bold">{goal.name}</CardTitle>
-                    {isCompleted && <Trophy className="h-5 w-5 text-yellow-500" />}
+                    <div className="flex items-center gap-2">
+                      <CardTitle className="text-lg font-bold">{goal.name}</CardTitle>
+                      {isCompleted && <Trophy className="h-5 w-5 text-yellow-500" />}
+                    </div>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon" className="h-8 w-8">
+                          <MoreHorizontal className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => openEditDialog(goal)}>
+                          <Pencil className="mr-2 h-4 w-4" />
+                          Modifier
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => openDeleteDialog(goal)}>
+                          <Trash className="mr-2 h-4 w-4" />
+                          Supprimer
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -219,6 +339,94 @@ export function GoalsClient({ initialGoals }: { initialGoals: Goal[] }) {
           })}
         </div>
       )}
+      <Dialog open={editOpen} onOpenChange={(value) => {
+        setEditOpen(value);
+        if (!value) {
+          setSelectedGoal(null);
+        }
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{`Modifier l'objectif`}</DialogTitle>
+            <DialogDescription>Mettez à jour les informations de votre objectif.</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleEditSubmit} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="edit-name">Nom du projet</Label>
+              <Input
+                id="edit-name"
+                placeholder="Ex: Vacances au Japon"
+                value={editFormData.name}
+                onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
+                required
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit-target">Montant cible (€)</Label>
+                <Input
+                  id="edit-target"
+                  type="number"
+                  min="1"
+                  step="0.01"
+                  value={editFormData.targetAmount}
+                  onChange={(e) => setEditFormData({ ...editFormData, targetAmount: e.target.value })}
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-current">Déjà économisé (€)</Label>
+                <Input
+                  id="edit-current"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={editFormData.currentAmount}
+                  onChange={(e) => setEditFormData({ ...editFormData, currentAmount: e.target.value })}
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-deadline">Date cible (optionnel)</Label>
+              <Input
+                id="edit-deadline"
+                type="date"
+                value={editFormData.deadline}
+                onChange={(e) => setEditFormData({ ...editFormData, deadline: e.target.value })}
+              />
+            </div>
+            <DialogFooter>
+              <Button type="submit" disabled={editLoading}>
+                {editLoading ? "Enregistrement..." : "Enregistrer"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={deleteOpen} onOpenChange={(value) => {
+        setDeleteOpen(value);
+        if (!value) {
+          setSelectedGoal(null);
+        }
+      }}>
+        <DialogContent>
+          <DialogHeader>
+          <DialogTitle>{`Supprimer l'objectif`}</DialogTitle>
+          <DialogDescription>
+              {`Cette action est définitive. Confirmez-vous la suppression de "${selectedGoal?.name}" ?`}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button type="button" variant="outline" onClick={() => setDeleteOpen(false)}>
+              Annuler
+            </Button>
+            <Button type="button" variant="destructive" onClick={handleDelete} disabled={deleteLoading}>
+              {deleteLoading ? "Suppression..." : "Supprimer"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -64,7 +64,7 @@ export default async function SettingsPage() {
               <div className="space-y-2">
                 <Label>Devise</Label>
                 <Input defaultValue="EUR (€)" disabled />
-                <p className="text-xs text-muted-foreground">La modification de la devise n'est pas encore disponible.</p>
+                <p className="text-xs text-muted-foreground">{`La modification de la devise n'est pas encore disponible.`}</p>
               </div>
               <div className="space-y-2">
                 <Label>Langue</Label>

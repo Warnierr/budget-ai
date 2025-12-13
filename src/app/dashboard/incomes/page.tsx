@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -50,12 +50,7 @@ export default function IncomesPage() {
     bankAccountId: '',
   });
 
-  // Charger les revenus et les comptes
-  useEffect(() => {
-    fetchData();
-  }, []);
-
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     try {
       const [incomesRes, accountsRes] = await Promise.all([
         fetch('/api/incomes'),
@@ -85,7 +80,12 @@ export default function IncomesPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [formData.bankAccountId, toast]);
+
+  // Charger les revenus et les comptes
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -176,7 +176,7 @@ export default function IncomesPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold">Revenus</h1>
-        <p className="text-gray-600 mt-1">Gérez vos entrées d'argent</p>
+        <p className="text-gray-600 mt-1">{`Gérez vos entrées d'argent`}</p>
       </div>
 
       {/* Résumé */}

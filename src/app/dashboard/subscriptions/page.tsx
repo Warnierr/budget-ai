@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -40,12 +40,7 @@ export default function SubscriptionsPage() {
     reminderDays: '3',
   });
 
-  // Charger les abonnements
-  useEffect(() => {
-    fetchSubscriptions();
-  }, []);
-
-  const fetchSubscriptions = async () => {
+  const fetchSubscriptions = useCallback(async () => {
     try {
       const response = await fetch('/api/subscriptions');
       if (response.ok) {
@@ -61,7 +56,12 @@ export default function SubscriptionsPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [toast]);
+
+  // Charger les abonnements
+  useEffect(() => {
+    fetchSubscriptions();
+  }, [fetchSubscriptions]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

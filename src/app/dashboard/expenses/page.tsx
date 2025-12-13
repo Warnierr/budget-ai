@@ -1,13 +1,20 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/use-toast';
-import { Plus, Trash2, Calendar, Wallet } from 'lucide-react';
+import { Plus, Trash2, Calendar, Wallet, Pencil } from 'lucide-react';
 import { formatCurrency, formatDateShort } from '@/lib/utils';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 
 interface Expense {
   id: string;
@@ -38,6 +45,8 @@ export default function ExpensesPage() {
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isAdding, setIsAdding] = useState(false);
+  const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
+  const [isUpdating, setIsUpdating] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
     amount: '',
@@ -46,13 +55,16 @@ export default function ExpensesPage() {
     status: 'paid',
     bankAccountId: '',
   });
+  const [editFormData, setEditFormData] = useState({
+    name: '',
+    amount: '',
+    date: new Date().toISOString().split('T')[0],
+    description: '',
+    status: 'paid',
+    bankAccountId: '',
+  });
 
-  // Charger les dépenses et les comptes
-  useEffect(() => {
-    fetchData();
-  }, []);
-
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     try {
       const [expensesRes, accountsRes] = await Promise.all([
         fetch('/api/expenses'),
@@ -83,7 +95,12 @@ export default function ExpensesPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [formData.bankAccountId, toast]);
+
+  // Charger les dépenses et les comptes
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -156,6 +173,56 @@ export default function ExpensesPage() {
         description: 'Impossible de supprimer la dépense',
         variant: 'destructive',
       });
+    }
+  };
+
+  const openEditModal = (expense: Expense) => {
+    setEditingExpense(expense);
+    setEditFormData({
+      name: expense.name,
+      amount: Number(expense.amount).toString(),
+      date: expense.date.split('T')[0],
+      description: expense.description || '',
+      status: expense.status || 'paid',
+      bankAccountId: expense.bankAccountId || '',
+    });
+  };
+
+  const handleUpdate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingExpense) return;
+
+    setIsUpdating(true);
+    try {
+      const response = await fetch(`/api/expenses/${editingExpense.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...editFormData,
+          amount: parseFloat(editFormData.amount),
+          bankAccountId: editFormData.bankAccountId || null,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('update failed');
+      }
+
+      toast({
+        title: 'Dépense mise à jour',
+        description: 'Les modifications ont été enregistrées.',
+      });
+
+      setEditingExpense(null);
+      fetchData();
+    } catch (error) {
+      toast({
+        title: 'Erreur',
+        description: 'Impossible de mettre à jour la dépense',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsUpdating(false);
     }
   };
 
@@ -337,6 +404,15 @@ export default function ExpensesPage() {
                       </div>
                     </div>
                     <div className="flex items-center gap-4">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => openEditModal(expense)}
+                        className="text-gray-500 hover:text-gray-700"
+                        aria-label="Modifier la dépense"
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
                       <span className="text-lg font-bold text-red-600">-{formatCurrency(Number(expense.amount))}</span>
                       <Button
                         variant="ghost"
@@ -354,6 +430,125 @@ export default function ExpensesPage() {
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={!!editingExpense} onOpenChange={(open) => !open && setEditingExpense(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Modifier la dépense</DialogTitle>
+            <DialogDescription>
+              Ajuste les informations puis sauvegarde les changements.
+            </DialogDescription>
+          </DialogHeader>
+
+          {editingExpense && (
+            <form onSubmit={handleUpdate} className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="edit-name">Nom *</Label>
+                  <Input
+                    id="edit-name"
+                    value={editFormData.name}
+                    onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-amount">Montant (€) *</Label>
+                  <Input
+                    id="edit-amount"
+                    type="number"
+                    step="0.01"
+                    value={editFormData.amount}
+                    onChange={(e) => setEditFormData({ ...editFormData, amount: e.target.value })}
+                    required
+                  />
+                </div>
+              </div>
+
+              {bankAccounts.length > 0 && (
+                <div className="space-y-2">
+                  <Label>Compte associé</Label>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                    {bankAccounts.filter(a => a.type === 'checking').map((account) => (
+                      <button
+                        key={account.id}
+                        type="button"
+                        onClick={() => setEditFormData({ ...editFormData, bankAccountId: account.id })}
+                        className={`flex items-center gap-2 p-3 rounded-lg border transition-all ${
+                          editFormData.bankAccountId === account.id
+                            ? 'border-2 shadow-sm'
+                            : 'border-gray-200 hover:border-gray-300'
+                        }`}
+                        style={{
+                          borderColor: editFormData.bankAccountId === account.id ? account.color || '#3B82F6' : undefined,
+                          backgroundColor: editFormData.bankAccountId === account.id ? `${account.color || '#3B82F6'}10` : undefined,
+                        }}
+                      >
+                        <div
+                          className="w-8 h-8 rounded-full flex items-center justify-center"
+                          style={{ backgroundColor: `${account.color || '#6B7280'}20` }}
+                        >
+                          <Wallet className="h-4 w-4" style={{ color: account.color || '#6B7280' }} />
+                        </div>
+                        <div className="text-left flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">{account.name}</p>
+                          {account.bank && (
+                            <p className="text-xs text-gray-500 truncate">{account.bank}</p>
+                          )}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="edit-date">Date *</Label>
+                  <Input
+                    id="edit-date"
+                    type="date"
+                    value={editFormData.date}
+                    onChange={(e) => setEditFormData({ ...editFormData, date: e.target.value })}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-status">Statut</Label>
+                  <select
+                    id="edit-status"
+                    value={editFormData.status}
+                    onChange={(e) => setEditFormData({ ...editFormData, status: e.target.value })}
+                    className="border rounded-md px-3 py-2 text-sm"
+                  >
+                    <option value="paid">Payée</option>
+                    <option value="pending">En attente</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="edit-description">Description</Label>
+                <Input
+                  id="edit-description"
+                  placeholder="Optionnel"
+                  value={editFormData.description}
+                  onChange={(e) => setEditFormData({ ...editFormData, description: e.target.value })}
+                />
+              </div>
+
+              <div className="flex justify-end gap-2">
+                <Button type="button" variant="outline" onClick={() => setEditingExpense(null)}>
+                  Annuler
+                </Button>
+                <Button type="submit" disabled={isUpdating}>
+                  {isUpdating ? 'Sauvegarde...' : 'Enregistrer'}
+                </Button>
+              </div>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
