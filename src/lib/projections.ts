@@ -12,22 +12,29 @@ export type RecurringIncome = {
   startDate?: string;
 };
 
-// Montant d'un abonnement pour une date donnée (approximation simple)
+/**
+ * Calcule le prélèvement d'abonnement pour une date donnée.
+ * Hypothèse simple : mensuel par défaut, yearly si précisé.
+ */
 export function getSubscriptionChargeForDate(subscription: Subscription, date: Date): number {
-  if (!subscription?.isActive && subscription.isActive !== undefined) return 0;
+  if (!subscription) return 0;
+  if (subscription.isActive === false) return 0;
+
   const freq = subscription.frequency?.toLowerCase();
-  if (freq === "yearly") {
-    // Prélèvement une fois par an à la date du billingDate (jour du mois)
-    const billingDay = subscription.billingDate ?? 1;
-    const isSameDay = date.getDate() === billingDay;
-    return isSameDay ? subscription.amount : 0;
-  }
-  // Par défaut, mensuel : charge si on est au jour de prélèvement (sinon on répartit sur le mois)
   const billingDay = subscription.billingDate ?? 1;
+
+  if (freq === "yearly") {
+    return date.getDate() === billingDay ? subscription.amount : 0;
+  }
+
+  // mensuel par défaut
   return date.getDate() === billingDay ? subscription.amount : 0;
 }
 
-// Détermine si un revenu récurrent doit se déclencher pour la date donnée
+/**
+ * Détermine si un revenu récurrent doit se déclencher à la date cible.
+ * Logique simple alignée sur l'ancien comportement.
+ */
 export function shouldTriggerRecurringIncome(
   income: RecurringIncome,
   targetDate: Date,
@@ -36,7 +43,6 @@ export function shouldTriggerRecurringIncome(
   if (!income?.isRecurring) return false;
   const freq = income.frequency?.toLowerCase();
 
-  // Si startDate est après la cible, ne pas déclencher
   if (income.startDate) {
     const start = new Date(income.startDate);
     if (start > targetDate) return false;
