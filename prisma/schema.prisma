@@ -36,6 +36,11 @@ model User {
   categories    Category[]
   budgets       Budget[]
   goals         Goal[]
+  
+  // V2 - Import CSV
+  importedTransactions ImportedTransaction[]
+  importRules          ImportRule[]
+  importBatches        ImportBatch[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -102,6 +107,9 @@ model BankAccount {
   incomes     Income[]
   expenses    Expense[]
   subscriptions Subscription[]
+  
+  // V2 - Import CSV
+  importedTransactions ImportedTransaction[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -258,6 +266,101 @@ model Goal {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@index([userId])
+}
+
+// ============================================
+// V2 - IMPORT CSV
+// ============================================
+
+// TRANSACTIONS IMPORTEES (staging avant validation)
+model ImportedTransaction {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  bankAccountId String
+  bankAccount   BankAccount @relation(fields: [bankAccountId], references: [id], onDelete: Cascade)
+  
+  // Donnees brutes de l'import
+  rawLabel      String      // Libelle original ("CARTE 12/01 CARREFOUR MARKET")
+  rawAmount     Float       // Montant original (negatif = depense, positif = revenu)
+  rawDate       DateTime    // Date de l'operation
+  
+  // Donnees enrichies par l'IA
+  category      String?     // Categorie detectee ("Alimentation", "Transport", etc.)
+  isRecurring   Boolean     @default(false)
+  recurringType String?     // "subscription" | "income" | null
+  
+  // Metadata import
+  importBatch   String      // ID unique du batch d'import (pour grouper)
+  bankSource    String?     // "revolut" | "sg" | "bnp" | "boursorama" | "generic"
+  
+  // Statut
+  status        String      @default("pending") // "pending" | "validated" | "rejected" | "converted"
+  
+  // Lien vers la transaction finale (apres conversion)
+  convertedExpenseId String?
+  convertedIncomeId  String?
+  
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  
+  // Eviter les doublons : meme user, meme compte, meme date, meme montant, meme libelle
+  @@unique([userId, bankAccountId, rawDate, rawAmount, rawLabel])
+  @@index([userId])
+  @@index([bankAccountId])
+  @@index([importBatch])
+  @@index([status])
+}
+
+// REGLES DE CATEGORISATION (apprentissage utilisateur)
+model ImportRule {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Pattern de matching (texte ou regex)
+  pattern     String   // "SPOTIFY" ou "CARREFOUR.*"
+  matchType   String   @default("contains") // "contains" | "startsWith" | "regex"
+  
+  // Action a appliquer
+  category    String   // Categorie a assigner
+  isRecurring Boolean  @default(false)
+  recurringType String? // "subscription" | "income"
+  
+  // Stats
+  usageCount  Int      @default(0)
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@unique([userId, pattern])
+  @@index([userId])
+}
+
+// BATCHES D'IMPORT (historique des imports)
+model ImportBatch {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  bankAccountId String
+  bankSource    String?  // Format detecte
+  fileName      String   // Nom du fichier original
+  
+  // Stats
+  totalRows     Int      @default(0)
+  importedRows  Int      @default(0)
+  skippedRows   Int      @default(0) // Doublons ignores
+  errorRows     Int      @default(0)
+  
+  status        String   @default("processing") // "processing" | "completed" | "failed"
+  errorMessage  String?
+  
+  createdAt     DateTime @default(now())
+  completedAt   DateTime?
+  
   @@index([userId])
 }
 
