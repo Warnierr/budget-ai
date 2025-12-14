@@ -18,6 +18,7 @@ export interface WidgetPreferences {
   forecast: boolean;
   flows: boolean;
   chart: boolean;
+  heatmap: boolean;
   pie: boolean;
   goals: boolean;
   subscriptions: boolean;
@@ -36,6 +37,7 @@ const WIDGET_LABELS: Record<keyof WidgetPreferences, { label: string; descriptio
   forecast: { label: "Projection fin de mois", description: "Prévision avec abonnements restants" },
   flows: { label: "Flux mensuels", description: "Entrées et sorties du mois" },
   chart: { label: "Courbe d'évolution", description: "Graphique du solde jour par jour" },
+  heatmap: { label: "Heatmap quotidienne", description: "Vue façon GitHub de l'équilibre journalier" },
   pie: { label: "Répartition dépenses", description: "Camembert par catégorie" },
   goals: { label: "Objectifs financiers", description: "Progression de vos objectifs" },
   subscriptions: { label: "Abonnements", description: "Prochains prélèvements" },

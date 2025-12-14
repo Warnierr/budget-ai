@@ -70,12 +70,31 @@ npm run build
 npm start
 ```
 
+### Configuration OpenRouter (IA)
+
+1. Copiez `config/openrouter.key.example` vers `config/openrouter.key`.
+2. Remplacez la valeur par votre clé OpenRouter (`sk-or-v1-...`).
+3. Redémarrez le serveur (`npm run dev`).
+4. Vérifiez la configuration avec :
+
+```bash
+npm run test:ai
+```
+
+Le chargement de la clé suit l'ordre suivant :
+- variable d'environnement `OPENROUTER_API_KEY`
+- fichier optionnel défini via `OPENROUTER_API_KEY_FILE`
+- `config/openrouter.key`
+
+La route IA retournera une erreur explicite si aucune clé n'est détectée.
+
 ## 📋 Documentation Complète
 
 - [Feuille de route détaillée](./ROADMAP.md)
 - [Architecture technique](./ARCHITECTURE.md)
 - [Sécurité et RGPD](./SECURITY_RGPD.md)
 - [Modèle commercial](./BUSINESS_MODEL.md)
+- [Documentation vivante](./docs/README.md)
 
 ## 🔐 Sécurité et Confidentialité
 

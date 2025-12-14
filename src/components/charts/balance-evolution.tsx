@@ -15,7 +15,10 @@ import {
 import { formatCurrency } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { TrendingUp, Calendar, Wallet, PiggyBank, AlertTriangle } from "lucide-react";
+import { getSubscriptionChargeForDate, shouldTriggerRecurringIncome } from "@/lib/projections";
 
 // Types
 interface Transaction {
@@ -41,6 +44,7 @@ interface RecurringIncome {
   amount: number;
   frequency: string;
   isRecurring: boolean;
+  startDate: string;
 }
 
 interface BalanceEvolutionProps {
@@ -69,6 +73,11 @@ export function BalanceEvolution({
 }: BalanceEvolutionProps) {
   const [selectedPeriod, setSelectedPeriod] = useState<Period>("1M");
   const [showProjection, setShowProjection] = useState(true);
+  const [customRange, setCustomRange] = useState<{ start: string; end: string } | null>(null);
+  const [rangeInputs, setRangeInputs] = useState<{ start: string; end: string }>({
+    start: "",
+    end: "",
+  });
 
   // Calcul des données du graphique
   const chartData = useMemo(() => {
@@ -76,13 +85,15 @@ export function BalanceEvolution({
     today.setHours(0, 0, 0, 0);
     
     const periodConfig = PERIODS.find((p) => p.key === selectedPeriod)!;
-    
+
     // Déterminer les dates de début et fin
     let startDate: Date;
     let endDate: Date;
-    let projectionMonths = 0;
 
-    if (selectedPeriod === "ALL") {
+    if (customRange && customRange.start && customRange.end) {
+      startDate = new Date(customRange.start);
+      endDate = new Date(customRange.end);
+    } else if (selectedPeriod === "ALL") {
       // Trouver la plus ancienne transaction
       const allDates = transactions.map((t) => new Date(t.date));
       startDate = allDates.length > 0 
@@ -90,28 +101,39 @@ export function BalanceEvolution({
         : new Date(today.getFullYear(), today.getMonth() - 6, 1);
       endDate = new Date(today);
       endDate.setMonth(endDate.getMonth() + 3); // Projection 3 mois
-      projectionMonths = 3;
     } else if (selectedPeriod === "3M") {
       startDate = new Date(today);
       startDate.setMonth(startDate.getMonth() - 1); // 1 mois passé
       endDate = new Date(today);
       endDate.setMonth(endDate.getMonth() + 2); // 2 mois futur
-      projectionMonths = 2;
     } else if (selectedPeriod === "1Y") {
       startDate = new Date(today);
       startDate.setMonth(startDate.getMonth() - 6); // 6 mois passé
       endDate = new Date(today);
       endDate.setMonth(endDate.getMonth() + 6); // 6 mois futur
-      projectionMonths = 6;
     } else {
       startDate = new Date(today);
       startDate.setDate(startDate.getDate() - periodConfig.days);
       endDate = new Date(today);
       if (selectedPeriod === "1M") {
         endDate.setMonth(endDate.getMonth() + 1);
-        projectionMonths = 1;
       }
     }
+
+    // Pré-calculer les transactions par journée (y compris futures)
+    const transactionsByDay = new Map<string, { incomes: number; expenses: number }>();
+    transactions.forEach((t) => {
+      const tDate = new Date(t.date);
+      tDate.setHours(0, 0, 0, 0);
+      const key = tDate.toISOString().split("T")[0];
+      const dayEntry = transactionsByDay.get(key) || { incomes: 0, expenses: 0 };
+      if (t.type === "income") {
+        dayEntry.incomes += t.amount;
+      } else {
+        dayEntry.expenses += t.amount;
+      }
+      transactionsByDay.set(key, dayEntry);
+    });
 
     // Créer un tableau de jours
     const data: {
@@ -154,37 +176,21 @@ export function BalanceEvolution({
       const isProjection = currentDate > today;
       const dayOfMonth = currentDate.getDate();
 
-      // Revenus du jour
-      let dayRevenues = 0;
-      let dayExpenses = 0;
+      const dateKey = currentDate.toISOString().split("T")[0];
+      const dayEntry = transactionsByDay.get(dateKey);
+
+      // Revenus/Dépenses du jour
+      let dayRevenues = dayEntry?.incomes ?? 0;
+      let dayExpenses = dayEntry?.expenses ?? 0;
       let daySubscriptions = 0;
 
-      if (!isProjection) {
-        // Données réelles
-        transactions.forEach((t) => {
-          const tDate = new Date(t.date);
-          if (
-            tDate.getDate() === currentDate.getDate() &&
-            tDate.getMonth() === currentDate.getMonth() &&
-            tDate.getFullYear() === currentDate.getFullYear()
-          ) {
-            if (t.type === "income") {
-              dayRevenues += t.amount;
-            } else {
-              dayExpenses += t.amount;
-            }
-          }
-        });
-      } else {
+      if (isProjection) {
         // Projection : ajouter les revenus récurrents
         recurringIncomes
           .filter((r) => r.isRecurring)
           .forEach((r) => {
-            // Supposer que les revenus récurrents arrivent le 1er ou le 25 du mois
-            if (dayOfMonth === 1 || dayOfMonth === 25) {
-              if (r.frequency === "monthly") {
-                dayRevenues += r.amount / 2; // Divisé car on check 2 jours
-              }
+            if (shouldTriggerRecurringIncome(r, currentDate, today)) {
+              dayRevenues += r.amount;
             }
           });
 
@@ -192,14 +198,7 @@ export function BalanceEvolution({
         subscriptions
           .filter((s) => s.isActive)
           .forEach((s) => {
-            if (s.billingDate === dayOfMonth) {
-              if (s.frequency === "monthly") {
-                daySubscriptions += s.amount;
-              } else if (s.frequency === "yearly") {
-                // Abonnement annuel - vérifier si c'est le mois
-                daySubscriptions += s.amount / 12; // Lissé
-              }
-            }
+            daySubscriptions += getSubscriptionChargeForDate(s, currentDate);
           });
       }
 
@@ -261,7 +260,7 @@ export function BalanceEvolution({
     }
 
     return data;
-  }, [transactions, subscriptions, recurringIncomes, currentBalance, selectedPeriod]);
+  }, [transactions, subscriptions, recurringIncomes, currentBalance, selectedPeriod, customRange]);
 
   // Statistiques
   const stats = useMemo(() => {
@@ -313,6 +312,27 @@ export function BalanceEvolution({
     return [Math.floor(min - padding), Math.ceil(max + padding)];
   }, [chartData]);
 
+  const displayedData = chartData;
+
+  const applyCustomRange = () => {
+    if (!rangeInputs.start || !rangeInputs.end) {
+      alert("Merci de renseigner les deux dates.");
+      return;
+    }
+    const start = new Date(rangeInputs.start);
+    const end = new Date(rangeInputs.end);
+    if (start > end) {
+      alert("La date de début doit être antérieure à la date de fin.");
+      return;
+    }
+    setCustomRange({ start: rangeInputs.start, end: rangeInputs.end });
+  };
+
+  const resetCustomRange = () => {
+    setCustomRange(null);
+    setRangeInputs({ start: "", end: "" });
+  };
+
   return (
     <Card className="shadow-sm border-slate-100">
       <CardHeader className="pb-2">
@@ -339,7 +359,11 @@ export function BalanceEvolution({
                     ? "bg-blue-600 text-white shadow-sm"
                     : "text-gray-600 hover:text-gray-900"
                 }`}
-                onClick={() => setSelectedPeriod(period.key)}
+                onClick={() => {
+                  setSelectedPeriod(period.key);
+                  setCustomRange(null);
+                  setRangeInputs({ start: "", end: "" });
+                }}
               >
                 {period.label}
               </Button>
@@ -416,16 +440,53 @@ export function BalanceEvolution({
           )}
         </div>
 
+        {/* Période personnalisée */}
+        <div className="flex flex-col md:flex-row gap-3 bg-slate-50 p-3 rounded-lg text-xs">
+          <div className="flex flex-1 gap-3">
+            <div className="flex-1 space-y-1">
+              <Label htmlFor="range-start">Début</Label>
+              <Input
+                id="range-start"
+                type="date"
+                value={rangeInputs.start}
+                onChange={(e) => setRangeInputs({ ...rangeInputs, start: e.target.value })}
+              />
+            </div>
+            <div className="flex-1 space-y-1">
+              <Label htmlFor="range-end">Fin</Label>
+              <Input
+                id="range-end"
+                type="date"
+                value={rangeInputs.end}
+                onChange={(e) => setRangeInputs({ ...rangeInputs, end: e.target.value })}
+              />
+            </div>
+          </div>
+          <div className="flex items-end gap-2">
+            <Button size="sm" onClick={applyCustomRange}>
+              Appliquer
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={resetCustomRange}
+              disabled={!customRange}
+            >
+              Réinitialiser
+            </Button>
+          </div>
+        </div>
+
         {/* Graphique */}
         <div className="h-[350px]">
-          {chartData.length === 0 ? (
+          {displayedData.length === 0 ? (
             <div className="h-full flex items-center justify-center text-gray-400">
               Pas assez de données pour afficher le graphique
             </div>
           ) : (
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart
-                data={chartData}
+                data={displayedData}
                 margin={{ top: 10, right: 10, left: -10, bottom: 0 }}
               >
                 <defs>

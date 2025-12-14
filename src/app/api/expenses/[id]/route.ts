@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { expenseSchema } from '@/lib/validations';
 
 // DELETE - Supprimer une dépense
 export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
@@ -31,6 +32,8 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
 }
 
 // PATCH - Mettre à jour une dépense
+const partialExpenseSchema = expenseSchema.partial();
+
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) {
@@ -49,14 +52,40 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       return NextResponse.json({ error: 'Dépense non trouvée' }, { status: 404 });
     }
 
+    const validated = partialExpenseSchema.safeParse({
+      ...body,
+      amount: body.amount !== undefined ? Number(body.amount) : undefined,
+      date: body.date ? new Date(body.date) : undefined,
+    });
+
+    if (!validated.success) {
+      return NextResponse.json({ error: validated.error.flatten() }, { status: 400 });
+    }
+
+    const updateData: Record<string, any> = {
+      ...validated.data,
+    };
+
+    if (body.date) {
+      updateData.date = validated.data.date;
+    }
+
+    if (body.bankAccountId !== undefined) {
+      updateData.bankAccountId = body.bankAccountId || null;
+    }
+
     const updated = await prisma.expense.update({
       where: { id: params.id },
-      data: {
-        ...body,
-        date: body.date ? new Date(body.date) : undefined,
-      },
+      data: updateData,
       include: {
         category: true,
+        bankAccount: {
+          select: {
+            id: true,
+            name: true,
+            color: true,
+          }
+        }
       },
     });
 

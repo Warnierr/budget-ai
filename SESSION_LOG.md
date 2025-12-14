@@ -895,3 +895,39 @@ npm run db:studio
 
 *Créé le 22 Novembre 2024 par Cursor AI*
 
+---
+
+# 🧪 Post-mortem – Intégration OpenRouter (27 Nov 2025)
+
+## Symptômes observés
+- `/api/ai/chat` retournait `401 - No cookie auth credentials found`.
+- Les logs Next affichaient `OPENROUTER_API_KEY is not configured correctement` malgré un `.env.local` rempli.
+- Chaque redémarrage de `npm run dev` réutilisait l’ancienne valeur `%OPENROUTER_API_KEY%`.
+
+## Analyse des causes racines
+1. **Cache Next.js** : le module `openrouter.ts` restait en mémoire avec la mauvaise clé, même après restart.
+2. **Écritures PowerShell** : `.env.local` fut corrompu plusieurs fois (null bytes, placeholders), ce qui empêchait Next.js de charger la clé.
+3. **Absence de fallback / outils** : impossible de tester la clé hors du serveur, donc diagnostic compliqué.
+
+## Correctifs appliqués
+1. **Nouveau helper `src/lib/server-env.ts`**  
+   - Normalise la clé, ignore les placeholders, priorise env vars puis `config/openrouter.key`, met en cache et génère une erreur explicite si rien n’est trouvé.
+2. **Refonte `src/lib/openrouter.ts`**  
+   - Toutes les requêtes appellent `getOpenRouterApiKey()` ; plus d’accès direct à `process.env`.
+3. **Fichier de clé versionné en exemple**  
+   - `config/openrouter.key.example` explique comment créer `config/openrouter.key` (ignoré par git) pour éviter les soucis d’encodage.
+4. **Script CLI `npm run test:ai`**  
+   - `scripts/test-openrouter.mjs` utilise la même logique que l’API et envoie une requête “pong” vers OpenRouter pour valider la clé avant de lancer Next.js.
+5. **Documentation mise à jour**  
+   - README + cette section décrivent la procédure et servent de guide de dépannage.
+
+## Résultats
+- `npm run test:ai` affiche désormais `✅ Réponse OpenRouter: pong`.
+- Une fois `config/openrouter.key` créé, `/dashboard/ai` fonctionne dès le premier lancement.
+- Méthode reproductible : la clé peut être changée sans toucher au code ni dépendre du cache Next.
+
+## Actions futures
+- Toujours utiliser `config/openrouter.key` (ou `OPENROUTER_API_KEY_FILE`) pour saisir les nouvelles clés.
+- Ajouter un check CI plus tard pour s’assurer que la clé est présente avant déploiement.
+- Garder ce script comme étape obligatoire dans la checklist de mise en route.
+

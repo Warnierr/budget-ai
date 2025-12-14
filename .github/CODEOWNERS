@@ -1,0 +1,9 @@
+# Code Owners - Budget AI
+# Ces personnes seront automatiquement ajoutees en reviewers
+
+# Tout le projet
+* @Warnierr
+
+# Sections specifiques (a personnaliser)
+# /src/lib/ @Warnierr
+# /prisma/ @Warnierr

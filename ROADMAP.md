@@ -220,6 +220,20 @@
 - [ ] Suivi de progression avec encouragements
 - [ ] Ajustements automatiques des budgets
 
+#### 5.5 Expérience Dashboard augmentée
+- [ ] **Flux d'activité intelligent**  
+  - Timeline éditorialisée (badges, alertes dépenses élevées, CTA contextuels)  
+  - Insights IA rapides directement dans le widget
+- [ ] **Heatmap du solde quotidien** (vue type GitHub contributions)
+  - Couleurs selon santé journalière
+  - Sélecteur de période (30/90 jours)
+- [ ] **Palette de commande / recherche universelle (`Ctrl+K`)**
+  - Accès instantané aux comptes, transactions, questions IA
+  - Suggestions dynamiques selon le contexte
+- [ ] **Playbooks IA guidés**
+  - Scénarios (voyage, fonds d'urgence, achat majeur)
+  - Checklist + estimation budgétaire + actions automatisables
+
 ### Semaine 11-12 : Tests IA et Optimisation
 
 - [ ] Tests des réponses de l'IA (qualité, pertinence)
