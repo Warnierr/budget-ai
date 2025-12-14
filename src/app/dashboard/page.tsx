@@ -13,13 +13,14 @@ const DEFAULT_PREFERENCES = {
   forecast: true,
   flows: true,
   chart: true,
+  heatmap: true,
   pie: true,
   goals: true,
   subscriptions: true,
   accounts: true,
   activity: true,
   advice: true,
-};
+} as const;
 
 export default async function DashboardPage() {
   const session = await getServerSession(authOptions);
@@ -126,10 +127,11 @@ export default async function DashboardPage() {
   // Données pour le camembert
   const pieData = expensesByCategory.map(item => {
     const category = allCategories.find(c => c.id === item.categoryId);
+    const color = category?.color ?? "#94a3b8";
     return {
       name: category?.name || 'Non classé',
       value: item._sum.amount || 0,
-      color: category?.color || undefined
+      color,
     };
   }).sort((a, b) => b.value - a.value);
 
@@ -181,6 +183,7 @@ export default async function DashboardPage() {
       amount: i.amount,
       frequency: i.frequency,
       isRecurring: i.isRecurring,
+      startDate: i.date.toISOString(),
     }));
 
   // Formater les objectifs
@@ -209,11 +212,11 @@ export default async function DashboardPage() {
     bankAccounts.map(async (account) => {
       const [incomeSum, expenseSum] = await Promise.all([
         prisma.income.aggregate({
-          where: { bankAccountId: account.id },
+          where: { bankAccountId: account.id, date: { lte: today } },
           _sum: { amount: true }
         }),
         prisma.expense.aggregate({
-          where: { bankAccountId: account.id },
+          where: { bankAccountId: account.id, date: { lte: today } },
           _sum: { amount: true }
         })
       ]);
