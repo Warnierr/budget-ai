@@ -93,8 +93,10 @@ interface DashboardClientProps {
   initialPreferences: WidgetPreferences;
 }
 
+type DashboardPreferences = WidgetPreferences & { heatmap?: boolean };
+
 export function DashboardClient({ data, initialPreferences }: DashboardClientProps) {
-  const [preferences, setPreferences] = useState<WidgetPreferences>(initialPreferences);
+  const [preferences, setPreferences] = useState<DashboardPreferences>(initialPreferences);
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
   const { toast } = useToast();
 
