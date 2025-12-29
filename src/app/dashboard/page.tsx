@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { getFirstDayOfMonth, getLastDayOfMonth } from "@/lib/utils";
 import { DashboardClientNeon } from "./dashboard-client-neon";
 import { DashboardClient } from "./dashboard-client";
+import { isHousing } from "@/lib/budget-advisor";
 
 export const dynamic = 'force-dynamic';
 
@@ -46,7 +47,7 @@ export default async function DashboardPage() {
     // Dépenses du mois courant
     expenses,
     // Tous les abonnements
-    subscriptions,
+    allSubscriptions,
     // Objectifs
     goals,
     // Comptes bancaires
@@ -105,6 +106,9 @@ export default async function DashboardPage() {
       orderBy: { date: 'asc' }
     }),
   ]);
+
+  // Filtrer les "abonnements" qui sont en fait du logement (loyer)
+  const subscriptions = allSubscriptions.filter(s => !isHousing('', s.name));
 
   // 2. Calculs des Totaux (mois courant)
   const totalIncome = incomes.reduce((sum, i) => sum + i.amount, 0);

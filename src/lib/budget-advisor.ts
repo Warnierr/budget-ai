@@ -17,7 +17,7 @@ export interface BudgetAnalysis {
   monthlyIncome: number;
   monthlyExpenses: number;
   monthlySavings: number;
-  
+
   // Répartition par type
   breakdown: {
     needs: number;      // Besoins essentiels
@@ -26,7 +26,7 @@ export interface BudgetAnalysis {
     subscriptions: number; // Abonnements
     housing: number;    // Logement
   };
-  
+
   // Ratios (en %)
   ratios: {
     needs: number;
@@ -35,10 +35,10 @@ export interface BudgetAnalysis {
     subscriptions: number;
     housing: number;
   };
-  
+
   // Score de santé financière (0-100)
   healthScore: number;
-  
+
   // Insights et conseils
   insights: Insight[];
 }
@@ -97,7 +97,7 @@ const SUBSCRIPTION_KEYWORDS = [
  * Détermine si une catégorie est un besoin essentiel
  */
 export function isNeed(category: string): boolean {
-  return NEEDS_CATEGORIES.some(c => 
+  return NEEDS_CATEGORIES.some(c =>
     category.toLowerCase().includes(c.toLowerCase())
   );
 }
@@ -106,7 +106,7 @@ export function isNeed(category: string): boolean {
  * Détermine si une catégorie est une envie
  */
 export function isWant(category: string): boolean {
-  return WANTS_CATEGORIES.some(c => 
+  return WANTS_CATEGORIES.some(c =>
     category.toLowerCase().includes(c.toLowerCase())
   );
 }
@@ -143,15 +143,16 @@ export function analyzeBudget(data: MonthlyData): BudgetAnalysis {
   const monthlyIncome = data.incomes.reduce((sum, i) => sum + i.amount, 0);
   const monthlyExpenses = data.expenses.reduce((sum, e) => sum + e.amount, 0);
   const monthlySavings = monthlyIncome - monthlyExpenses;
-  
-  // Calcul des abonnements
-  const subscriptionsTotal = data.subscriptions.reduce((sum, s) => sum + s.amount, 0);
-  
+
+  // Calcul des abonnements (Exclure le logement/loyer des abonnements pour l'analyse)
+  const realSubscriptions = data.subscriptions.filter(s => !isHousing('', s.name));
+  const subscriptionsTotal = realSubscriptions.reduce((sum, s) => sum + s.amount, 0);
+
   // Catégorisation des dépenses
   let needsTotal = 0;
   let wantsTotal = 0;
   let housingTotal = 0;
-  
+
   for (const expense of data.expenses) {
     if (isHousing(expense.category, expense.description)) {
       housingTotal += expense.amount;
@@ -162,7 +163,7 @@ export function analyzeBudget(data: MonthlyData): BudgetAnalysis {
       wantsTotal += expense.amount;
     }
   }
-  
+
   // Calcul des ratios
   const ratios = {
     needs: monthlyIncome > 0 ? (needsTotal / monthlyIncome) * 100 : 0,
@@ -171,7 +172,7 @@ export function analyzeBudget(data: MonthlyData): BudgetAnalysis {
     subscriptions: monthlyIncome > 0 ? (subscriptionsTotal / monthlyIncome) * 100 : 0,
     housing: monthlyIncome > 0 ? (housingTotal / monthlyIncome) * 100 : 0,
   };
-  
+
   // Générer les insights
   const insights = generateInsights(monthlyIncome, {
     needs: needsTotal,
@@ -180,10 +181,10 @@ export function analyzeBudget(data: MonthlyData): BudgetAnalysis {
     subscriptions: subscriptionsTotal,
     housing: housingTotal,
   }, ratios);
-  
+
   // Calculer le score de santé
   const healthScore = calculateHealthScore(ratios, monthlySavings);
-  
+
   return {
     monthlyIncome,
     monthlyExpenses,
@@ -211,9 +212,9 @@ function generateInsights(
   ratios: { needs: number; wants: number; savings: number; subscriptions: number; housing: number }
 ): Insight[] {
   const insights: Insight[] = [];
-  
+
   // ===== RÈGLE 50/30/20 =====
-  
+
   // Besoins (objectif: 50%)
   if (ratios.needs <= 50) {
     insights.push({
@@ -249,7 +250,7 @@ function generateInsights(
       target: 50,
     });
   }
-  
+
   // Envies (objectif: 30%)
   if (ratios.wants <= 30) {
     insights.push({
@@ -284,7 +285,7 @@ function generateInsights(
       target: 30,
     });
   }
-  
+
   // Épargne (objectif: 20%)
   if (ratios.savings >= 20) {
     insights.push({
@@ -331,9 +332,9 @@ function generateInsights(
       target: 20,
     });
   }
-  
+
   // ===== RÈGLE LOGEMENT (max 33%) =====
-  
+
   if (breakdown.housing > 0) {
     if (ratios.housing <= 30) {
       insights.push({
@@ -380,9 +381,9 @@ function generateInsights(
       });
     }
   }
-  
+
   // ===== ABONNEMENTS =====
-  
+
   if (breakdown.subscriptions > 0) {
     if (ratios.subscriptions <= 5) {
       insights.push({
@@ -415,9 +416,9 @@ function generateInsights(
       });
     }
   }
-  
+
   // ===== CONSEIL GÉNÉRAL =====
-  
+
   if (income > 0 && breakdown.savings > 0) {
     const monthsToEmergencyFund = (income * 3) / breakdown.savings;
     if (monthsToEmergencyFund <= 12) {
@@ -431,7 +432,7 @@ function generateInsights(
       });
     }
   }
-  
+
   return insights;
 }
 
@@ -444,17 +445,17 @@ function calculateHealthScore(
   savings: number
 ): number {
   let score = 100;
-  
+
   // Pénalités besoins (objectif 50%)
   if (ratios.needs > 50) {
     score -= Math.min(20, (ratios.needs - 50) * 2);
   }
-  
+
   // Pénalités envies (objectif 30%)
   if (ratios.wants > 30) {
     score -= Math.min(15, (ratios.wants - 30) * 1.5);
   }
-  
+
   // Bonus/malus épargne (objectif 20%)
   if (ratios.savings >= 20) {
     score += Math.min(10, (ratios.savings - 20) * 0.5);
@@ -464,17 +465,17 @@ function calculateHealthScore(
     // Déficit = grosse pénalité
     score -= 30 + Math.abs(ratios.savings);
   }
-  
+
   // Pénalité logement (objectif 33%)
   if (ratios.housing > 33) {
     score -= Math.min(15, (ratios.housing - 33) * 1.5);
   }
-  
+
   // Pénalité abonnements (objectif 5%)
   if (ratios.subscriptions > 5) {
     score -= Math.min(10, (ratios.subscriptions - 5) * 2);
   }
-  
+
   return Math.max(0, Math.min(100, Math.round(score)));
 }
 
