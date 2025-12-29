@@ -3,15 +3,27 @@
 import { useSession } from 'next-auth/react';
 import { Bell } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useTheme } from '@/contexts/theme-context';
+import { cn } from '@/lib/utils';
 
 export function Header() {
   const { data: session } = useSession();
+  const { theme } = useTheme();
 
   return (
-    <header className="h-16 border-b bg-white flex items-center justify-between px-6">
+    <header className={cn(
+      "h-16 border-b flex items-center justify-between px-6 sticky top-0 z-30",
+      theme.glassBackground,
+      theme.glassBackdrop,
+      theme.glassBorder
+    )}>
       <div>
-        <h2 className="text-xl font-semibold">Bienvenue, {session?.user?.name || 'Utilisateur'} !</h2>
-        <p className="text-sm text-gray-600">Gérez votre budget intelligemment</p>
+        <h2 className={cn("text-xl font-semibold", theme.textPrimary)}>
+          Bienvenue, {session?.user?.name || 'Utilisateur'} !
+        </h2>
+        <p className={cn("text-sm", theme.textSecondary)}>
+          Gérez votre budget intelligemment
+        </p>
       </div>
 
       <div className="flex items-center gap-4">

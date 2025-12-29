@@ -9,7 +9,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
-import { parseCSVFile, detectBankFormat } from '@/lib/parsers';
+import { parseCSVFile } from '@/lib/parsers';
+import { classifyTransaction } from '@/lib/classifier';
 
 // Limite de taille : 5MB
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
@@ -115,6 +116,13 @@ export async function POST(request: NextRequest) {
     
     for (const transaction of parseResult.transactions) {
       try {
+        // Classifier la transaction (suggestions IA)
+        const classification = await classifyTransaction(userId, {
+          label: transaction.label,
+          amount: transaction.amount,
+          date: transaction.date,
+        });
+        
         // Tenter l'insertion (la contrainte unique gerera les doublons)
         await prisma.importedTransaction.create({
           data: {
@@ -126,6 +134,10 @@ export async function POST(request: NextRequest) {
             importBatch: importBatch.id,
             bankSource: parseResult.bankSource,
             status: 'pending',
+            // Classification IA
+            category: classification.category,
+            isRecurring: classification.isRecurring,
+            recurringType: classification.recurringType,
           },
         });
         importedCount++;

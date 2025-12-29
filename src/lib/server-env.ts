@@ -1,5 +1,3 @@
-"use client";
-
 import "server-only";
 import fs from "fs";
 import path from "path";
@@ -19,6 +17,7 @@ function normalizeKey(value?: string | null): string {
 
 function looksLikePlaceholder(value: string): boolean {
   if (!value) return true;
+  if (value.includes("%")) return true; // Catch Windows unresolved vars
   const normalized = value.toLowerCase();
   return PLACEHOLDER_SNIPPETS.some((snippet) => normalized.includes(snippet));
 }

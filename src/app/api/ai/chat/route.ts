@@ -2,9 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
-import { 
+import {
   chatWithFinancialContext,
   chatWithAssistant,
+  streamChatWithFinancialContext,
+  streamChatCompletion,
   Message,
   RawFinancialData,
   PrivacyPreferences,
@@ -15,16 +17,29 @@ export const dynamic = 'force-dynamic';
 
 // POST - Envoyer un message au chat IA
 export async function POST(req: NextRequest) {
+  console.log('--- AI CHAT REQUEST START ---');
   const session = await getServerSession(authOptions);
+  console.log('Session user ID:', session?.user?.id);
   if (!session?.user?.id) {
     return NextResponse.json({ error: 'Non autorisé' }, { status: 401 });
   }
 
   try {
+    const apiKey = process.env.OPENROUTER_API_KEY;
+    console.log('AI Chat: API Key raw:', apiKey);
+
+    // Protection contre les variables d'env Windows non résolues (%VAR%)
+    if (!apiKey || apiKey.includes("%")) {
+      console.error("[Chat API] ERROR: OPENROUTER_API_KEY is missing or invalid (contains %)");
+      return NextResponse.json({
+        error: 'Service IA non configuré. Veuillez vérifier la clé API dans .env.'
+      }, { status: 500 });
+    }
+
     const body = await req.json();
-    const { 
-      message, 
-      conversationHistory = [], 
+    const {
+      message,
+      conversationHistory = [],
       includeFinancialContext = true,
       privacyPreferences = DEFAULT_PRIVACY_PREFERENCES,
       model,
@@ -35,56 +50,105 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Message requis' }, { status: 400 });
     }
 
-    let response: string;
-
     if (includeFinancialContext) {
       // Récupérer les données financières de l'utilisateur
       const rawData = await getUserFinancialData(session.user.id);
-      
-      response = await chatWithFinancialContext(
-        rawData,
-        conversationHistory as Message[],
-        message,
-        privacyPreferences as PrivacyPreferences,
-        { model: selectedModel }
-      );
-    } else {
-      // Chat sans contexte financier
-      response = await chatWithAssistant(
-        conversationHistory as Message[],
-        message,
-        { model: selectedModel }
-      );
-    }
 
-    return NextResponse.json({ 
-      response,
-      // Indiquer ce qui a été partagé (pour transparence)
-      privacyInfo: includeFinancialContext ? {
+      // Info de confidentialité pour les headers
+      const privacyInfo = {
         level: privacyPreferences.level,
         sharedCategories: Object.entries(privacyPreferences)
           .filter(([key, value]) => key.startsWith('share') && value)
           .map(([key]) => key.replace('share', ''))
-      } : null
-    });
+      };
+
+      // Création du stream
+      const stream = new ReadableStream({
+        async start(controller) {
+          const encoder = new TextEncoder();
+          try {
+            const iterator = streamChatWithFinancialContext(
+              rawData,
+              conversationHistory as Message[],
+              message,
+              privacyPreferences as PrivacyPreferences,
+              { model: selectedModel }
+            );
+
+            for await (const chunk of iterator) {
+              controller.enqueue(encoder.encode(chunk));
+            }
+          } catch (e) {
+            console.error("Stream error:", e);
+            controller.error(e);
+          } finally {
+            controller.close();
+          }
+        }
+      });
+
+      return new Response(stream, {
+        headers: {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          'Connection': 'keep-alive',
+          'X-Privacy-Info': JSON.stringify(privacyInfo)
+        }
+      });
+
+    } else {
+      // Chat sans contexte financier (Streaming aussi)
+      // Construire les messages manuellement
+      const systemMsg = { role: 'system', content: 'Tu es un assistant financier.' } as Message;
+      const msgs = [systemMsg, ...conversationHistory, { role: 'user', content: message }] as Message[];
+
+      const stream = new ReadableStream({
+        async start(controller) {
+          const encoder = new TextEncoder();
+          try {
+            const iterator = streamChatCompletion({
+              messages: msgs,
+              model: selectedModel
+            });
+
+            for await (const chunk of iterator) {
+              controller.enqueue(encoder.encode(chunk));
+            }
+          } catch (e) {
+            console.error(e);
+            controller.error(e);
+          } finally {
+            controller.close();
+          }
+        }
+      });
+
+      return new Response(stream, {
+        headers: {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          'Connection': 'keep-alive'
+        }
+      });
+    }
 
   } catch (error) {
     console.error('AI Chat error:', error);
-    
+
     // Gérer les erreurs spécifiques
     if (error instanceof Error) {
       if (error.message.includes('OPENROUTER_API_KEY')) {
-        return NextResponse.json({ 
-          error: 'Service IA non configuré. Veuillez configurer OPENROUTER_API_KEY.' 
+        return NextResponse.json({
+          error: 'Service IA non configuré. Veuillez configurer OPENROUTER_API_KEY.'
         }, { status: 503 });
       }
       if (error.message.includes('OpenRouter API error')) {
-        return NextResponse.json({ 
-          error: 'Erreur du service IA. Veuillez réessayer.' 
+        return NextResponse.json({
+          error: 'Erreur du service IA. Veuillez réessayer.'
         }, { status: 502 });
       }
     }
-    
+
     return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 });
   }
 }
@@ -110,11 +174,11 @@ async function getUserFinancialData(userId: string): Promise<RawFinancialData> {
         type: true,
         initialBalance: true,
         // Calculer le solde actuel
-        incomes: { 
+        incomes: {
           where: { date: { lte: today } },
           select: { amount: true },
         },
-        expenses: { 
+        expenses: {
           where: { date: { lte: today } },
           select: { amount: true },
         },
@@ -123,7 +187,7 @@ async function getUserFinancialData(userId: string): Promise<RawFinancialData> {
 
     // Revenus du mois
     prisma.income.findMany({
-      where: { 
+      where: {
         userId,
         date: { gte: startOfMonth, lte: endOfMonth }
       },
@@ -139,7 +203,7 @@ async function getUserFinancialData(userId: string): Promise<RawFinancialData> {
 
     // Dépenses du mois
     prisma.expense.findMany({
-      where: { 
+      where: {
         userId,
         date: { gte: startOfMonth, lte: endOfMonth }
       },
@@ -221,7 +285,7 @@ async function getUserFinancialData(userId: string): Promise<RawFinancialData> {
     accounts: accounts.map(a => {
       const totalIncome = a.incomes.reduce((sum, i) => sum + i.amount, 0);
       const totalExpense = a.expenses.reduce((sum, e) => sum + e.amount, 0);
-      
+
       return {
         id: a.id,
         name: a.name,
@@ -282,4 +346,3 @@ async function getUserFinancialData(userId: string): Promise<RawFinancialData> {
     })),
   };
 }
-

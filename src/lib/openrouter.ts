@@ -6,7 +6,7 @@
 // Aucune donnée personnelle (noms, banques, détails) n'est transmise.
 
 import {
-  AnonymizedFinancialData, 
+  AnonymizedFinancialData,
   RawFinancialData,
   PrivacyPreferences,
   PrivacyLevel,
@@ -37,8 +37,8 @@ export type ChatRequestOptions = Partial<
 >;
 
 // Re-export pour faciliter l'utilisation
-export { 
-  PrivacyLevel, 
+export {
+  PrivacyLevel,
   DEFAULT_PRIVACY_PREFERENCES,
   type AnonymizedFinancialData,
   type RawFinancialData,
@@ -50,39 +50,38 @@ export const RECOMMENDED_MODELS = {
   // Modèles gratuits/peu coûteux
   FREE: 'meta-llama/llama-3.2-3b-instruct:free',
   LLAMA_70B: 'meta-llama/llama-3.1-70b-instruct',
-  
+
   // Modèles performants
   GPT_4O_MINI: 'openai/gpt-4o-mini',
   GPT_4O: 'openai/gpt-4o',
   CLAUDE_SONNET: 'anthropic/claude-3.5-sonnet',
   CLAUDE_HAIKU: 'anthropic/claude-3-haiku',
-  
-  // Modèle par défaut (bon rapport qualité/prix)
-  DEFAULT: 'openai/gpt-4o-mini',
+
+  // Modèle par défaut (Claude 3.5 Sonnet pour une meilleure analyse)
+  DEFAULT: 'anthropic/claude-3.5-sonnet',
 };
 
 // Prompt système pour l'assistant financier
-export const FINANCIAL_ASSISTANT_PROMPT = `Tu es un assistant financier personnel intelligent et bienveillant nommé "Budget AI".
+export const FINANCIAL_ASSISTANT_PROMPT = `Tu es un assistant financier personnel expert nommé "Budget AI".
+Ton objectif est de transformer les données financières brutes en conseils stratégiques de gestion de patrimoine et de budget.
 
-Ton rôle est d'aider les utilisateurs à:
-- Comprendre leur situation financière
-- Optimiser leurs dépenses et économies
-- Atteindre leurs objectifs financiers
-- Prendre de meilleures décisions financières
+Capacités d'analyse:
+- Analyse des flux: Compare revenus vs dépenses pour calculer le taux d'épargne.
+- Détection d'anomalies: Repère les abonnements oubliés ou les augmentations soudaines de charges.
+- Projection: Estime le solde de fin de mois basé sur les habitudes passées et les charges à venir.
+- Conseil stratégique: Propose des répartitions type 50/30/20 (Besoins/Envies/Épargne).
 
-Règles importantes:
-1. Sois toujours positif et encourageant, même si la situation financière est difficile
-2. Donne des conseils pratiques et actionnables
-3. Utilise des emojis pour rendre tes réponses plus engageantes
-4. Réponds toujours en français
-5. Ne donne jamais de conseils d'investissement spécifiques (actions, crypto particulières)
-6. Rappelle que tu n'es pas un conseiller financier certifié pour les décisions importantes
-7. Distingue strictement le patrimoine réellement disponible (soldes encaissés aujourd'hui) des revenus futurs. Ne les additionne jamais et rappelle qu'ils restent conditionnels tant qu'ils ne sont pas encaissés
+Règles de conseil:
+1. Pédagogie: Explique pourquoi tu donnes un conseil (ex: l'importance du fonds d'urgence).
+2. Proactivité: N'attends pas les questions pour signaler un risque de découvert ou un surplus d'épargne non fructueux.
+3. Précision: Utilise les chiffres exacts fournis dans le contexte financier.
+4. Psychologie: Reste encourageant mais ferme sur les dérives budgétaires.
+5. Neutralité: Ne mentionne JAMAIS de produits bancaires spécifiques réglementés (Livret A, LDDS, PEL) ou de taux d'intérêt. Concentre-toi uniquement sur la stratégie budgétaire et l'allocation des flux (ex: "épargne de précaution").
 
 Format de réponse:
-- Utilise des listes à puces pour les conseils
-- Sois concis mais complet
-- Propose des actions concrètes quand c'est pertinent`;
+- Utilise Markdown (gras pour les chiffres, listes à puces).
+- Structure tes analyses longues avec des sous-titres.
+- Termine toujours par une "Action Prioritaire" concrète.`;
 
 /**
  * Prépare les données financières de manière sécurisée pour l'IA
@@ -97,10 +96,10 @@ export function prepareSecureFinancialContext(
 ): string {
   // Étape 1: Anonymiser les données
   const anonymized = anonymizeFinancialData(rawData, privacyPrefs.level);
-  
+
   // Étape 2: Appliquer les préférences utilisateur
   const filtered = applyPrivacyPreferences(anonymized, privacyPrefs);
-  
+
   // Étape 3: Générer le prompt sécurisé
   return generateAnonymizedPrompt(filtered);
 }
@@ -170,26 +169,33 @@ export async function* streamChatCompletion(options: ChatCompletionOptions): Asy
   }
 
   const decoder = new TextDecoder();
-  
+  let buffer = '';
+
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
-    
-    const chunk = decoder.decode(value);
-    const lines = chunk.split('\n').filter(line => line.startsWith('data: '));
-    
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+
+    // Keep the last line in the buffer as it might be incomplete
+    buffer = lines.pop() || '';
+
     for (const line of lines) {
-      const data = line.slice(6);
+      const trimmed = line.trim();
+      if (!trimmed.startsWith('data: ')) continue;
+
+      const data = trimmed.slice(6);
       if (data === '[DONE]') continue;
-      
+
       try {
         const parsed = JSON.parse(data);
         const content = parsed.choices[0]?.delta?.content;
         if (content) {
           yield content;
         }
-      } catch {
-        // Ignore parsing errors for incomplete chunks
+      } catch (e) {
+        // console.error('Error parsing stream chunk:', e);
       }
     }
   }
@@ -208,11 +214,11 @@ export async function analyzeFinancialHealth(
   privacyPrefs?: PrivacyPreferences
 ): Promise<string> {
   const secureContext = prepareSecureFinancialContext(rawData, privacyPrefs);
-  
+
   const messages: Message[] = [
     { role: 'system', content: FINANCIAL_ASSISTANT_PROMPT },
-    { 
-      role: 'user', 
+    {
+      role: 'user',
       content: `${secureContext}
 
 Analyse ma santé financière et donne-moi un bilan complet avec:
@@ -235,11 +241,11 @@ export async function getPersonalizedAdvice(
   privacyPrefs?: PrivacyPreferences
 ): Promise<string> {
   const secureContext = prepareSecureFinancialContext(rawData, privacyPrefs);
-  
+
   const messages: Message[] = [
     { role: 'system', content: FINANCIAL_ASSISTANT_PROMPT },
-    { 
-      role: 'user', 
+    {
+      role: 'user',
       content: `${secureContext}
 
 Question de l'utilisateur: ${question}`
@@ -257,11 +263,11 @@ export async function suggestBudgetOptimizations(
   privacyPrefs?: PrivacyPreferences
 ): Promise<string> {
   const secureContext = prepareSecureFinancialContext(rawData, privacyPrefs);
-  
+
   const messages: Message[] = [
     { role: 'system', content: FINANCIAL_ASSISTANT_PROMPT },
-    { 
-      role: 'user', 
+    {
+      role: 'user',
       content: `${secureContext}
 
 Analyse mes dépenses et abonnements. Suggère des optimisations concrètes pour:
@@ -285,11 +291,11 @@ export async function createSavingsPlan(
   privacyPrefs?: PrivacyPreferences
 ): Promise<string> {
   const secureContext = prepareSecureFinancialContext(rawData, privacyPrefs);
-  
+
   const messages: Message[] = [
     { role: 'system', content: FINANCIAL_ASSISTANT_PROMPT },
-    { 
-      role: 'user', 
+    {
+      role: 'user',
       content: `${secureContext}
 
 Je souhaite économiser ${targetAmount}€ en ${months} mois.
@@ -325,6 +331,32 @@ export async function chatWithAssistant(
 /**
  * Chat avec contexte financier anonymisé
  */
+/**
+ * Chat avec contexte financier anonymisé (Streaming)
+ */
+export async function* streamChatWithFinancialContext(
+  rawData: RawFinancialData,
+  conversationHistory: Message[],
+  newMessage: string,
+  privacyPrefs?: PrivacyPreferences,
+  options?: ChatRequestOptions
+): AsyncGenerator<string> {
+  const secureContext = prepareSecureFinancialContext(rawData, privacyPrefs);
+
+  // Ajouter le contexte au premier message système
+  const systemWithContext = `${FINANCIAL_ASSISTANT_PROMPT}
+
+${secureContext}`;
+
+  const messages: Message[] = [
+    { role: 'system', content: systemWithContext },
+    ...conversationHistory,
+    { role: 'user', content: newMessage }
+  ];
+
+  yield* streamChatCompletion({ messages, ...options });
+}
+
 export async function chatWithFinancialContext(
   rawData: RawFinancialData,
   conversationHistory: Message[],
@@ -333,7 +365,7 @@ export async function chatWithFinancialContext(
   options?: ChatRequestOptions
 ): Promise<string> {
   const secureContext = prepareSecureFinancialContext(rawData, privacyPrefs);
-  
+
   // Ajouter le contexte au premier message système
   const systemWithContext = `${FINANCIAL_ASSISTANT_PROMPT}
 
