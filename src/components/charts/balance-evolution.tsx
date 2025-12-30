@@ -83,7 +83,7 @@ export function BalanceEvolution({
   const chartData = useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    
+
     const periodConfig = PERIODS.find((p) => p.key === selectedPeriod)!;
 
     // Déterminer les dates de début et fin
@@ -96,7 +96,7 @@ export function BalanceEvolution({
     } else if (selectedPeriod === "ALL") {
       // Trouver la plus ancienne transaction
       const allDates = transactions.map((t) => new Date(t.date));
-      startDate = allDates.length > 0 
+      startDate = allDates.length > 0
         ? new Date(Math.min(...allDates.map((d) => d.getTime())))
         : new Date(today.getFullYear(), today.getMonth() - 6, 1);
       endDate = new Date(today);
@@ -149,7 +149,7 @@ export function BalanceEvolution({
 
     // Calculer le solde de départ (remonter dans le temps)
     let runningBalance = currentBalance;
-    
+
     // Soustraire toutes les transactions après startDate pour avoir le solde de départ
     transactions.forEach((t) => {
       const tDate = new Date(t.date);
@@ -172,7 +172,7 @@ export function BalanceEvolution({
         day: "2-digit",
         month: "2-digit",
       });
-      
+
       const isProjection = currentDate > today;
       const dayOfMonth = currentDate.getDate();
 
@@ -267,12 +267,12 @@ export function BalanceEvolution({
     const projectedData = chartData.filter((d) => d.isProjection);
     const realData = chartData.filter((d) => !d.isProjection);
 
-    const finalProjectedBalance = projectedData.length > 0 
-      ? projectedData[projectedData.length - 1].soldeProjection 
+    const finalProjectedBalance = projectedData.length > 0
+      ? projectedData[projectedData.length - 1].soldeProjection
       : null;
-    
-    const currentBalanceFromData = realData.length > 0 
-      ? realData[realData.length - 1].soldeReel 
+
+    const currentBalanceFromData = realData.length > 0
+      ? realData[realData.length - 1].soldeReel
       : currentBalance;
 
     const monthlySubscriptionsCost = subscriptions
@@ -291,8 +291,8 @@ export function BalanceEvolution({
       monthlySubscriptionsCost,
       monthlyRecurringIncome,
       freeToSpend,
-      variation: finalProjectedBalance && currentBalanceFromData 
-        ? finalProjectedBalance - currentBalanceFromData 
+      variation: finalProjectedBalance && currentBalanceFromData
+        ? finalProjectedBalance - currentBalanceFromData
         : 0,
     };
   }, [chartData, currentBalance, subscriptions, recurringIncomes]);
@@ -302,13 +302,13 @@ export function BalanceEvolution({
     const allValues = chartData
       .map((d) => d.soldeReel ?? d.soldeProjection ?? 0)
       .filter((v) => v !== null);
-    
+
     if (allValues.length === 0) return [0, 1000];
-    
+
     const min = Math.min(...allValues);
     const max = Math.max(...allValues);
     const padding = (max - min) * 0.1;
-    
+
     return [Math.floor(min - padding), Math.ceil(max + padding)];
   }, [chartData]);
 
@@ -354,11 +354,10 @@ export function BalanceEvolution({
                 key={period.key}
                 variant={selectedPeriod === period.key ? "default" : "ghost"}
                 size="sm"
-                className={`h-7 px-3 text-xs font-medium ${
-                  selectedPeriod === period.key
+                className={`h-7 px-3 text-xs font-medium ${selectedPeriod === period.key
                     ? "bg-blue-600 text-white shadow-sm"
                     : "text-gray-600 hover:text-gray-900"
-                }`}
+                  }`}
                 onClick={() => {
                   setSelectedPeriod(period.key);
                   setCustomRange(null);
@@ -523,7 +522,7 @@ export function BalanceEvolution({
                     boxShadow: "0 10px 25px -5px rgb(0 0 0 / 0.1)",
                     padding: "12px",
                   }}
-                  formatter={(value: number, name: string) => {
+                  formatter={(value: any, name: any) => {
                     const labels: Record<string, string> = {
                       soldeReel: "Solde réel",
                       soldeProjection: "Projection",

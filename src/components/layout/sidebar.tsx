@@ -13,6 +13,7 @@ import {
   LogOut,
   Brain,
   Wallet,
+  Upload,
 } from 'lucide-react';
 import { signOut } from 'next-auth/react';
 import { Button } from '@/components/ui/button';
@@ -20,6 +21,7 @@ import { Button } from '@/components/ui/button';
 const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { name: 'Comptes', href: '/dashboard/accounts', icon: Wallet },
+  { name: 'Import CSV', href: '/dashboard/import', icon: Upload },
   { name: 'Revenus', href: '/dashboard/incomes', icon: TrendingUp },
   { name: 'Dépenses', href: '/dashboard/expenses', icon: TrendingDown },
   { name: 'Abonnements', href: '/dashboard/subscriptions', icon: Repeat },

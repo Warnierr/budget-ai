@@ -3,7 +3,9 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 import { getFirstDayOfMonth, getLastDayOfMonth } from "@/lib/utils";
+import { DashboardClientNeon } from "./dashboard-client-neon";
 import { DashboardClient } from "./dashboard-client";
+import { isHousing } from "@/lib/budget-advisor";
 
 export const dynamic = 'force-dynamic';
 
@@ -41,11 +43,11 @@ export default async function DashboardPage() {
   // 1. Récupération massive des données
   const [
     // Revenus du mois courant
-    incomes, 
+    incomes,
     // Dépenses du mois courant
-    expenses, 
+    expenses,
     // Tous les abonnements
-    subscriptions,
+    allSubscriptions,
     // Objectifs
     goals,
     // Comptes bancaires
@@ -105,17 +107,20 @@ export default async function DashboardPage() {
     }),
   ]);
 
+  // Filtrer les "abonnements" qui sont en fait du logement (loyer)
+  const subscriptions = allSubscriptions.filter(s => !isHousing('', s.name));
+
   // 2. Calculs des Totaux (mois courant)
   const totalIncome = incomes.reduce((sum, i) => sum + i.amount, 0);
   const totalExpenseVariable = expenses.reduce((sum, e) => sum + e.amount, 0);
-  
+
   // Estimation des abonnements mensuels
   const activeSubscriptions = subscriptions.filter(s => s.isActive);
   const totalSubscriptionCost = activeSubscriptions.reduce((sum, s) => {
     return sum + (s.frequency === 'monthly' ? s.amount : s.amount / 12);
   }, 0);
 
-  const totalExpenseReal = totalExpenseVariable; 
+  const totalExpenseReal = totalExpenseVariable;
   const balance = totalIncome - totalExpenseReal;
 
   // 3. Intelligence Prévisionnelle
@@ -137,26 +142,26 @@ export default async function DashboardPage() {
 
   // Activité récente fusionnée (mois courant)
   const recentActivity = [
-    ...incomes.map(i => ({ 
+    ...incomes.map(i => ({
       id: i.id,
       name: i.name,
       amount: i.amount,
       date: i.date.toISOString(),
-      type: 'income' as const 
+      type: 'income' as const
     })),
-    ...expenses.map(e => ({ 
+    ...expenses.map(e => ({
       id: e.id,
       name: e.name,
       amount: e.amount,
       date: e.date.toISOString(),
-      type: 'expense' as const 
+      type: 'expense' as const
     }))
   ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-   .slice(0, 5);
+    .slice(0, 5);
 
   // NOUVEAU: Toutes les transactions pour le graphique avancé (avec bankAccountId)
   const allTransactions = [
-    ...allIncomes.map(i => ({ 
+    ...allIncomes.map(i => ({
       id: i.id,
       name: i.name,
       amount: i.amount,
@@ -164,7 +169,7 @@ export default async function DashboardPage() {
       type: 'income' as const,
       bankAccountId: i.bankAccountId,
     })),
-    ...allExpenses.map(e => ({ 
+    ...allExpenses.map(e => ({
       id: e.id,
       name: e.name,
       amount: e.amount,
@@ -221,9 +226,9 @@ export default async function DashboardPage() {
         })
       ]);
 
-      const currentBalance = 
-        account.initialBalance + 
-        (incomeSum._sum.amount || 0) - 
+      const currentBalance =
+        account.initialBalance +
+        (incomeSum._sum.amount || 0) -
         (expenseSum._sum.amount || 0);
 
       return {
@@ -256,9 +261,9 @@ export default async function DashboardPage() {
   };
 
   return (
-    <DashboardClient 
-      data={dashboardData} 
-      initialPreferences={DEFAULT_PREFERENCES} 
+    <DashboardClient
+      data={dashboardData}
+      initialPreferences={DEFAULT_PREFERENCES}
     />
   );
 }

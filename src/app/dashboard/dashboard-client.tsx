@@ -11,6 +11,7 @@ import { WidgetGoals } from "@/components/dashboard/widget-goals";
 import { WidgetSubscriptions } from "@/components/dashboard/widget-subscriptions";
 import { WidgetAccounts } from "@/components/dashboard/widget-accounts";
 import { WidgetActivity } from "@/components/dashboard/widget-activity";
+import { WidgetBudgetAdvisor } from "@/components/dashboard/widget-budget-advisor";
 import { WidgetSettings, WidgetPreferences } from "@/components/dashboard/widget-settings";
 import { AccountSelector, AccountTypeInfo } from "@/components/dashboard/account-selector";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -95,7 +96,11 @@ interface DashboardClientProps {
 
 type DashboardPreferences = WidgetPreferences & { heatmap?: boolean };
 
+import { useTheme } from "@/contexts/theme-context";
+import { cn } from "@/lib/utils";
+
 export function DashboardClient({ data, initialPreferences }: DashboardClientProps) {
+  const { theme } = useTheme();
   const [preferences, setPreferences] = useState<DashboardPreferences>(initialPreferences);
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
   const { toast } = useToast();
@@ -125,8 +130,8 @@ export function DashboardClient({ data, initialPreferences }: DashboardClientPro
   };
 
   // Obtenir le compte sélectionné
-  const selectedAccount = selectedAccountId 
-    ? data.accounts.find(a => a.id === selectedAccountId) 
+  const selectedAccount = selectedAccountId
+    ? data.accounts.find(a => a.id === selectedAccountId)
     : null;
 
   // Filtrer les données selon le compte sélectionné
@@ -174,7 +179,7 @@ export function DashboardClient({ data, initialPreferences }: DashboardClientPro
 
     const accountIncomes = currentMonthTransactions.filter(t => t.type === 'income');
     const accountExpenses = currentMonthTransactions.filter(t => t.type === 'expense');
-    
+
     const totalIncome = accountIncomes.reduce((sum, t) => sum + t.amount, 0);
     const totalExpense = accountExpenses.reduce((sum, t) => sum + t.amount, 0);
 
@@ -402,15 +407,19 @@ export function DashboardClient({ data, initialPreferences }: DashboardClientPro
   ]);
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500">
+    <div className={cn(
+      "min-h-screen p-6 space-y-8 animate-in fade-in duration-500",
+      "bg-gradient-to-br",
+      theme.bgGradient
+    )}>
       {/* Header avec sélecteur de compte */}
       <div className="flex flex-col gap-4">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Tableau de bord</h1>
-            <p className="text-gray-500">
+            <h1 className={cn("text-3xl font-bold tracking-tight", theme.textPrimary)}>Tableau de bord</h1>
+            <p className={theme.textSecondary}>
               Vos finances du mois de{" "}
-              <span className="font-semibold text-gray-900 capitalize">
+              <span className={cn("font-semibold capitalize", theme.textPrimary)}>
                 {new Date().toLocaleDateString("fr-FR", { month: "long", year: "numeric" })}
               </span>
             </p>
@@ -435,7 +444,7 @@ export function DashboardClient({ data, initialPreferences }: DashboardClientPro
         {/* Sélecteur de compte */}
         {accounts.length > 0 && (
           <div className="flex flex-col md:flex-row md:items-center gap-4">
-            <AccountSelector 
+            <AccountSelector
               accounts={accounts}
               selectedAccountId={selectedAccountId}
               onSelectAccount={handleSelectAccount}
@@ -443,7 +452,7 @@ export function DashboardClient({ data, initialPreferences }: DashboardClientPro
             {selectedAccount && (
               <div className="flex items-center gap-2 text-sm text-gray-500">
                 <span className="px-2 py-1 rounded-full text-xs font-medium"
-                  style={{ 
+                  style={{
                     backgroundColor: `${selectedAccount.color || "#6B7280"}15`,
                     color: selectedAccount.color || "#6B7280"
                   }}
@@ -466,15 +475,14 @@ export function DashboardClient({ data, initialPreferences }: DashboardClientPro
       <div className="grid gap-6 md:grid-cols-3">
         {/* Solde Réel - adapté au compte sélectionné */}
         {preferences.balance && (
-          <Card className={`relative overflow-hidden border-none shadow-xl ${
-            selectedAccount?.type === 'savings' 
-              ? 'bg-gradient-to-br from-green-800 via-green-700 to-green-800' 
-              : selectedAccount?.type === 'investment'
+          <Card className={`relative overflow-hidden border-none shadow-xl ${selectedAccount?.type === 'savings'
+            ? 'bg-gradient-to-br from-green-800 via-green-700 to-green-800'
+            : selectedAccount?.type === 'investment'
               ? 'bg-gradient-to-br from-purple-800 via-purple-700 to-purple-800'
               : selectedAccount?.type === 'crypto'
-              ? 'bg-gradient-to-br from-orange-800 via-orange-700 to-orange-800'
-              : 'bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900'
-          } text-white`}>
+                ? 'bg-gradient-to-br from-orange-800 via-orange-700 to-orange-800'
+                : 'bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900'
+            } text-white`}>
             <div className="absolute top-0 right-0 p-4 opacity-10">
               {selectedAccount?.type === 'savings' ? (
                 <PiggyBank className="h-24 w-24" />
@@ -563,9 +571,9 @@ export function DashboardClient({ data, initialPreferences }: DashboardClientPro
                     <ArrowUpRight className="h-4 w-4 text-green-600" />
                   </div>
                   <span className="text-sm text-gray-600">
-                    {selectedAccount?.type === 'savings' ? 'Versements' : 
-                     selectedAccount?.type === 'investment' ? 'Apports' :
-                     selectedAccount?.type === 'crypto' ? 'Achats/Dépôts' : 'Entrées'}
+                    {selectedAccount?.type === 'savings' ? 'Versements' :
+                      selectedAccount?.type === 'investment' ? 'Apports' :
+                        selectedAccount?.type === 'crypto' ? 'Achats/Dépôts' : 'Entrées'}
                   </span>
                 </div>
                 <span className="font-bold text-green-600">{formatCurrency(filteredData.totalIncome)}</span>
@@ -576,9 +584,9 @@ export function DashboardClient({ data, initialPreferences }: DashboardClientPro
                     <ArrowDownRight className="h-4 w-4 text-red-600" />
                   </div>
                   <span className="text-sm text-gray-600">
-                    {selectedAccount?.type === 'savings' ? 'Retraits' : 
-                     selectedAccount?.type === 'investment' ? 'Retraits' :
-                     selectedAccount?.type === 'crypto' ? 'Ventes/Retraits' : 'Sorties & Abos'}
+                    {selectedAccount?.type === 'savings' ? 'Retraits' :
+                      selectedAccount?.type === 'investment' ? 'Retraits' :
+                        selectedAccount?.type === 'crypto' ? 'Ventes/Retraits' : 'Sorties & Abos'}
                   </span>
                 </div>
                 <span className="font-bold text-red-600">{formatCurrency(filteredData.totalExpenseReal)}</span>
@@ -586,8 +594,8 @@ export function DashboardClient({ data, initialPreferences }: DashboardClientPro
               <div className="pt-2 border-t flex justify-between items-center text-xs text-gray-500">
                 <span>
                   {selectedAccount?.type === 'savings' ? 'Taux d\'épargne' :
-                   selectedAccount?.type === 'investment' ? 'Rendement' :
-                   selectedAccount?.type === 'crypto' ? 'Variation' : 'Taux d\'épargne'}
+                    selectedAccount?.type === 'investment' ? 'Rendement' :
+                      selectedAccount?.type === 'crypto' ? 'Variation' : 'Taux d\'épargne'}
                 </span>
                 <span className={filteredData.balance > 0 ? "text-green-600 font-bold" : "text-gray-500"}>
                   {filteredData.totalIncome > 0 ? Math.round(((filteredData.totalIncome - filteredData.totalExpenseReal) / filteredData.totalIncome) * 100) : 0}%
@@ -640,6 +648,9 @@ export function DashboardClient({ data, initialPreferences }: DashboardClientPro
             {/* Widget Objectifs */}
             {preferences.goals && <WidgetGoals goals={goals} />}
 
+            {/* Widget Conseils Budget (règle 50/30/20) */}
+            <WidgetBudgetAdvisor />
+
             {/* Widget Abonnements */}
             {preferences.subscriptions && <WidgetSubscriptions subscriptions={subscriptions} />}
 
@@ -648,19 +659,17 @@ export function DashboardClient({ data, initialPreferences }: DashboardClientPro
 
             {/* Carte Conseil - adapté au type de compte */}
             {preferences.advice && (
-              <Card className={`flex flex-col justify-center ${
-                selectedAccount?.type === 'savings' ? 'bg-green-50 border-green-100' :
+              <Card className={`flex flex-col justify-center ${selectedAccount?.type === 'savings' ? 'bg-green-50 border-green-100' :
                 selectedAccount?.type === 'investment' ? 'bg-purple-50 border-purple-100' :
-                selectedAccount?.type === 'crypto' ? 'bg-orange-50 border-orange-100' :
-                'bg-amber-50 border-amber-100'
-              }`}>
+                  selectedAccount?.type === 'crypto' ? 'bg-orange-50 border-orange-100' :
+                    'bg-amber-50 border-amber-100'
+                }`}>
                 <CardContent className="p-6 text-center space-y-4">
-                  <div className={`mx-auto w-12 h-12 rounded-full flex items-center justify-center ${
-                    selectedAccount?.type === 'savings' ? 'bg-green-100' :
+                  <div className={`mx-auto w-12 h-12 rounded-full flex items-center justify-center ${selectedAccount?.type === 'savings' ? 'bg-green-100' :
                     selectedAccount?.type === 'investment' ? 'bg-purple-100' :
-                    selectedAccount?.type === 'crypto' ? 'bg-orange-100' :
-                    'bg-amber-100'
-                  }`}>
+                      selectedAccount?.type === 'crypto' ? 'bg-orange-100' :
+                        'bg-amber-100'
+                    }`}>
                     {selectedAccount?.type === 'savings' ? (
                       <PiggyBank className="h-6 w-6 text-green-600" />
                     ) : selectedAccount?.type === 'investment' ? (
@@ -672,23 +681,21 @@ export function DashboardClient({ data, initialPreferences }: DashboardClientPro
                     )}
                   </div>
                   <div>
-                    <h3 className={`font-bold text-lg ${
-                      selectedAccount?.type === 'savings' ? 'text-green-900' :
+                    <h3 className={`font-bold text-lg ${selectedAccount?.type === 'savings' ? 'text-green-900' :
                       selectedAccount?.type === 'investment' ? 'text-purple-900' :
-                      selectedAccount?.type === 'crypto' ? 'text-orange-900' :
-                      'text-amber-900'
-                    }`}>
+                        selectedAccount?.type === 'crypto' ? 'text-orange-900' :
+                          'text-amber-900'
+                      }`}>
                       {selectedAccount?.type === 'savings' ? 'Conseil Épargne' :
-                       selectedAccount?.type === 'investment' ? 'Conseil Investissement' :
-                       selectedAccount?.type === 'crypto' ? 'Conseil Crypto' :
-                       'Analyse rapide'}
+                        selectedAccount?.type === 'investment' ? 'Conseil Investissement' :
+                          selectedAccount?.type === 'crypto' ? 'Conseil Crypto' :
+                            'Analyse rapide'}
                     </h3>
-                    <p className={`mt-2 text-sm ${
-                      selectedAccount?.type === 'savings' ? 'text-green-700' :
+                    <p className={`mt-2 text-sm ${selectedAccount?.type === 'savings' ? 'text-green-700' :
                       selectedAccount?.type === 'investment' ? 'text-purple-700' :
-                      selectedAccount?.type === 'crypto' ? 'text-orange-700' :
-                      'text-amber-700'
-                    }`}>
+                        selectedAccount?.type === 'crypto' ? 'text-orange-700' :
+                          'text-amber-700'
+                      }`}>
                       {filteredData.balance > 0 ? accountAdvice.positive : accountAdvice.negative}
                     </p>
                   </div>

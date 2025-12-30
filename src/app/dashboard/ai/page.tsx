@@ -5,12 +5,12 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/components/ui/use-toast';
-import { 
-  Send, 
-  Bot, 
-  User, 
-  Sparkles, 
-  Shield, 
+import {
+  Send,
+  Bot,
+  User,
+  Sparkles,
+  Shield,
   Brain,
   TrendingUp,
   PiggyBank,
@@ -82,11 +82,17 @@ type ModelOption = {
 
 const MODEL_OPTIONS: readonly ModelOption[] = [
   {
-    value: 'meta-llama/llama-3.2-3b-instruct:free',
-    label: 'Llama 3.2 3B (gratuit)',
-    tagline: 'Idéal pour tester et pour les réponses rapides sans coût.',
-    cost: '💸 Gratuit',
-    badge: 'IA conseillée',
+    value: 'anthropic/claude-3.5-sonnet',
+    label: 'Claude 3.5 Sonnet',
+    tagline: 'Le plus intelligent. Excellente rédaction FR et analyses financières poussées.',
+    cost: '🧠 Premium Anthropic',
+    badge: 'CONSEILLÉ',
+  },
+  {
+    value: 'openai/gpt-4o',
+    label: 'GPT-4o',
+    tagline: 'Modèle le plus équilibré et extrêmement rapide.',
+    cost: '⚡ Premium OpenAI',
   },
   {
     value: 'openai/gpt-4o-mini',
@@ -95,16 +101,10 @@ const MODEL_OPTIONS: readonly ModelOption[] = [
     cost: '⚡ Premium OpenAI',
   },
   {
-    value: 'anthropic/claude-3.5-sonnet',
-    label: 'Claude 3.5 Sonnet',
-    tagline: 'Excellente rédaction FR et analyses longues.',
-    cost: '🧠 Premium Anthropic',
-  },
-  {
-    value: 'meta-llama/llama-3.1-70b-instruct',
-    label: 'Llama 3.1 70B',
-    tagline: 'Modèle open-source plus puissant pour scénarios complexes.',
-    cost: '⚙️ Crédit OpenRouter',
+    value: 'meta-llama/llama-3.2-3b-instruct:free',
+    label: 'Llama 3.2 3B (gratuit)',
+    tagline: 'Idéal pour tester rapidement sans coût.',
+    cost: '💸 Gratuit',
   },
 ] as const;
 
@@ -178,19 +178,41 @@ Pose-moi une question ou utilise les suggestions rapides ci-dessous !`,
       });
 
       if (!response.ok) {
-        const error = await response.json();
+        const error = await response.json().catch(() => ({}));
         throw new Error(error.error || 'Erreur de communication');
       }
 
-      const data = await response.json();
-
-      const assistantMessage: Message = {
+      // Initialiser le message de l'assistant vide
+      setMessages(prev => [...prev, {
         role: 'assistant',
-        content: data.response,
+        content: '',
         timestamp: new Date(),
-      };
+      }]);
 
-      setMessages(prev => [...prev, assistantMessage]);
+      if (!response.body) throw new Error('No response body');
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+
+        setMessages(prev => {
+          const newMessages = [...prev];
+          const lastIndex = newMessages.length - 1;
+
+          if (lastIndex >= 0 && newMessages[lastIndex].role === 'assistant') {
+            newMessages[lastIndex] = {
+              ...newMessages[lastIndex],
+              content: newMessages[lastIndex].content + chunk
+            };
+          }
+          return newMessages;
+        });
+      }
 
     } catch (error) {
       console.error('Chat error:', error);
@@ -199,7 +221,7 @@ Pose-moi une question ou utilise les suggestions rapides ci-dessous !`,
         description: error instanceof Error ? error.message : 'Impossible de contacter l\'assistant',
         variant: 'destructive',
       });
-      
+
       // Message d'erreur dans le chat
       setMessages(prev => [...prev, {
         role: 'assistant',
@@ -327,7 +349,7 @@ Pose-moi une question ou utilise les suggestions rapides ci-dessous !`,
                 onCheckedChange={setIncludeContext}
               />
             </div>
-            
+
             {includeContext && (
               <div className="grid grid-cols-2 md:grid-cols-3 gap-3 pt-2 border-t">
                 {[
@@ -341,7 +363,7 @@ Pose-moi une question ou utilise les suggestions rapides ci-dessous !`,
                     <Switch
                       id={key}
                       checked={privacy[key as keyof PrivacyPreferences] as boolean}
-                      onCheckedChange={(checked) => 
+                      onCheckedChange={(checked) =>
                         setPrivacy(prev => ({ ...prev, [key]: checked }))
                       }
                     />
@@ -352,7 +374,7 @@ Pose-moi une question ou utilise les suggestions rapides ci-dessous !`,
             )}
 
             <p className="text-xs text-purple-700 bg-purple-100 p-2 rounded">
-              🔒 Tes données sont <strong>anonymisées</strong> avant envoi. 
+              🔒 Tes données sont <strong>anonymisées</strong> avant envoi.
               Aucun nom de compte, banque ou transaction n&apos;est transmis à l&apos;IA.
             </p>
           </CardContent>
@@ -390,13 +412,12 @@ Pose-moi une question ou utilise les suggestions rapides ci-dessous !`,
                 </div>
               )}
               <div
-                className={`max-w-[80%] rounded-lg p-3 ${
-                  message.role === 'user'
-                    ? 'bg-purple-600 text-white'
-                    : 'bg-gray-100 text-gray-900'
-                }`}
+                className={`max-w-[80%] rounded-lg p-3 ${message.role === 'user'
+                  ? 'bg-purple-600 text-white'
+                  : 'bg-gray-100 text-gray-900'
+                  }`}
               >
-                <div 
+                <div
                   className="prose prose-sm max-w-none"
                   dangerouslySetInnerHTML={{ __html: formatMessage(message.content) }}
                 />
@@ -411,7 +432,7 @@ Pose-moi une question ou utilise les suggestions rapides ci-dessous !`,
               )}
             </div>
           ))}
-          
+
           {isLoading && (
             <div className="flex gap-3 justify-start">
               <div className="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center">
@@ -423,7 +444,7 @@ Pose-moi une question ou utilise les suggestions rapides ci-dessous !`,
               </div>
             </div>
           )}
-          
+
           <div ref={messagesEndRef} />
         </CardContent>
 
