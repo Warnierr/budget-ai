@@ -12,13 +12,13 @@ interface ThemeContextType {
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-    const [themeName, setThemeName] = useState<ThemeName>('dark-neon');
-    const [theme, setThemeState] = useState<ThemeColors>(getTheme('dark-neon'));
+    const [themeName, setThemeName] = useState<ThemeName>('neon-purple');
+    const [theme, setThemeState] = useState<ThemeColors>(getTheme('neon-purple'));
 
     // Load theme from localStorage on mount
     useEffect(() => {
         const savedTheme = localStorage.getItem('budget-ai-theme') as ThemeName;
-        if (savedTheme && ['dark-neon', 'light', 'custom'].includes(savedTheme)) {
+        if (savedTheme && ['neon-purple', 'ocean-blue', 'sunset-orange', 'forest-green', 'light', 'custom'].includes(savedTheme)) {
             setThemeName(savedTheme);
             setThemeState(getTheme(savedTheme));
         }

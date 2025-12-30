@@ -5,6 +5,7 @@ import { Bell } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useTheme } from '@/contexts/theme-context';
 import { cn } from '@/lib/utils';
+import { ThemeSwitcher } from '@/components/ui/theme-switcher';
 
 export function Header() {
   const { data: session } = useSession();
@@ -26,9 +27,10 @@ export function Header() {
         </p>
       </div>
 
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-2">
+        <ThemeSwitcher />
         <Button variant="ghost" size="icon">
-          <Bell className="h-5 w-5" />
+          <Bell className={cn("h-5 w-5", theme.textSecondary)} />
         </Button>
       </div>
     </header>
